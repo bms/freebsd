@@ -187,6 +187,24 @@
 #define	XHCI_DB_SID_GET(x)	(((x) >> 16) & 0xFFFF)	/* RW - doorbell stream ID */
 #define	XHCI_DB_SID_SET(x)	(((x) & 0xFFFF) << 16)	/* RW - doorbell stream ID */
 
+/*
+ * XHCI Debug Capability (DbC) registers.
+ * Offset given by XHCI_ID_USB_DEBUG extended capability pointer.
+ * See also: Sec. 7.6.8 of Intel xHCI specification v1.1.
+ */
+#define	XHCI_DCID	0x00	/* Capability ID */
+#define	XHCI_DCDB	0x04	/* Doorbell */
+#define	XHCI_DCERSTSZ	0x08	/* Event Ring Segment Table Size */
+#define	XHCI_DCERSTBA	0x10	/* Event Ring Base Address */
+#define	XHCI_DCERDP	0x18	/* Event Ring Dequeue Pointer */
+#define	XHCI_DCCTRL	0x20	/* DbC Control Register */
+#define	 XHCI_DCCTRL_DCE	0x80000000
+#define	XHCI_DCST	0x24	/* DbC Status Register */
+#define	XHCI_DCPORTSC	0x28	/* DbC Port Status/Control Register */
+#define	XHCI_DCCP	0x30	/* DbC Context Pointer */
+#define	XHCI_DCDDI1	0x38	/* DbC Device Descriptor Info 1 */
+#define	XHCI_DCDDI2	0x3C	/* DbC Device Descriptor Info 2 */
+
 /* XHCI legacy support */
 #define	XHCI_XECP_ID(x)		((x) & 0xFF)
 #define	XHCI_XECP_NEXT(x)	(((x) >> 8) & 0xFF)
@@ -200,6 +218,7 @@
 #define	XHCI_ID_VIRTUALIZATION	0x0004
 #define	XHCI_ID_MSG_IRQ		0x0005
 #define	XHCI_ID_USB_LOCAL_MEM	0x0006
+#define	XHCI_ID_DBC		0x000a
 
 /* XHCI register R/W wrappers */
 #define	XREAD1(sc, what, a) \

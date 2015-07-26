@@ -277,6 +277,11 @@ xhci_pci_attach(device_t self)
 
 	xhci_pci_take_controller(self);
 
+#ifdef USB_DBGCAP
+	sc->sc_dbc_off = -1;	/* XXX */
+	err = xhci_dbc_detect(self);
+#endif
+
 	err = xhci_halt_controller(sc);
 
 	if (err == 0)

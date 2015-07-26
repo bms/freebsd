@@ -94,6 +94,13 @@ SYSCTL_INT(_hw_usb_xhci, OID_AUTO, streams, CTLFLAG_RW | CTLFLAG_TUN,
     &xhcistreams, 0, "Set to enable streams mode support");
 TUNABLE_INT("hw.usb.xhci.streams", &xhcistreams);
 
+#ifdef USB_DBGCAP
+static int xhcidbgcap = 1;
+SYSCTL_INT(_hw_usb_xhci, OID_AUTO, dbgcap, CTLFLAG_RW | CTLFLAG_TUN,
+    &xhcidbgcap, 0, "Set to enable Debug Capability support");
+TUNABLE_INT("hw.usb.xhci.dbgcap", &xhcidbgcap);
+#endif
+
 #ifdef USB_DEBUG
 static int xhcidebug;
 static int xhciroute;
@@ -670,6 +677,64 @@ xhci_uninit(struct xhci_softc *sc)
 	cv_destroy(&sc->sc_cmd_cv);
 	sx_destroy(&sc->sc_cmd_sx);
 }
+
+#ifdef USB_DBGCAP
+int
+xhci_dbc_detect(device_t self)
+{
+	struct xhci_softc *sc = device_get_softc(self);
+	uint32_t cparams;
+	uint32_t dcctrl;
+	uint32_t dcst;
+	uint32_t eecp;
+	uint32_t eec;
+	uint32_t noff;
+	uint8_t  port;
+
+	sc->sc_dbc_off = noff = -1;
+	cparams = XREAD4(sc, capa, XHCI_HCSPARAMS0);
+	eecp = XHCI_HCS0_XECP(cparams) << 2;
+	while (eecp != 0) {
+		eec = XREAD4(sc, capa, eecp);
+		if (XHCI_XECP_ID(eec) == XHCI_ID_DBC) {
+			sc->sc_dbc_off = eecp;
+			break;
+		}
+		noff = XHCI_XECP_NEXT(eec) << 2;
+		if (noff == 0)
+			break;
+		eecp += noff;
+	}
+
+	DPRINTF("DBCOFF=0x%x\n", sc->sc_dbc_off);
+	if (!xhcidbgcap || sc->sc_dbc_off == -1)
+		return (0);
+
+	/* Probe status register to see if DbC capability exists (and mapped) */
+	dcst = XREAD4(sc, dbc, XHCI_DCST);
+	DPRINTF("DCST=0x%x\n", dcst);
+	if (dcst == -1)
+		return (USB_ERR_NO_PIPE); /* not responding */
+
+	/* Write DCE enable for Dbc-Off->Dbc-Disconnected */
+	/* XXX Don't do this in final code. */
+	dcctrl = XREAD4(sc, dbc, XHCI_DCCTRL);
+	if (dcctrl == 0xFFFFFFFF)
+		return (USB_ERR_NO_PIPE); /* not responding */
+	dcctrl |= XHCI_DCCTRL_DCE;
+	XWRITE4(sc, dbc, XHCI_DCCTRL, dcctrl);
+	dcctrl = XREAD4(sc, dbc, XHCI_DCCTRL);
+	if (dcctrl == 0xFFFFFFFF)
+		return (USB_ERR_NO_PIPE); /* not responding */
+	DPRINTF("DCCTRL=0x%x\n", dcctrl);
+
+	/* note: if port == 0, capability is not mapped to a port */
+	port = dcst >> 24;
+	device_printf(self, "Debug Capability on root port %d\n", port);
+
+	return (0);
+}
+#endif /* USB_DBGCAP */
 
 static void
 xhci_set_hw_power_sleep(struct usb_bus *bus, uint32_t state)

@@ -487,6 +487,10 @@ struct xhci_softc {
 	uint32_t		sc_runt_off;
 	/* offset to doorbell registers */
 	uint32_t		sc_door_off;
+/*#ifdef USB_DBGCAP*/
+	/* offset to debug port registers */
+	uint32_t		sc_dbc_off;
+/*#endif*/
 
 	/* chip specific */
 	uint16_t		sc_erst_max;
@@ -526,5 +530,9 @@ usb_error_t xhci_init(struct xhci_softc *, device_t, uint8_t);
 usb_error_t xhci_start_controller(struct xhci_softc *);
 void	xhci_interrupt(struct xhci_softc *);
 void	xhci_uninit(struct xhci_softc *);
+
+#ifdef USB_DBGCAP
+int	xhci_dbc_detect(device_t);
+#endif
 
 #endif					/* _XHCI_H_ */
