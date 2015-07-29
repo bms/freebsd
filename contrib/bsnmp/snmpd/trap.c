@@ -647,6 +647,89 @@ snmp_send_trap(const struct asn_oid *trap_oid, ...)
 	}
 }
 
+#if 1 /* SMUX_SUPPORT */
+/*
+ * Helper function for snmp_smux to relay traps from sub-agents.
+ * XXX Does not support notification lists, SNMPv3 or IPv6.
+ * XXX This code can probably be factored in/with the function above.
+ * FIXME: I probably can't commit this until these issues are resolved. -bms
+ */
+void
+snmp_smux_send_trap(
+	const struct asn_oid	*eoid,
+	u_char			 agent_addr[4],
+	int32_t			 generic_trap,
+	int32_t			 specific_trap,
+	uint32_t		 time_stamp,
+	struct snmp_value	 bindings[],
+	u_int			 nbindings)
+{
+	struct snmp_pdu		 pdu;
+	struct trapsink		*t;
+	u_char			*sndbuf;
+	size_t			 sndlen;
+	ssize_t			 len;
+	u_int			 i;
+
+	TAILQ_FOREACH(t, &trapsink_list, link) {
+		if (t->status != TRAPSINK_ACTIVE)
+			continue;
+		memset(&pdu, 0, sizeof(pdu));
+		strcpy(pdu.community, t->comm);
+		if (t->version == TRAPSINK_V1) {
+			pdu.version = SNMP_V1;
+			pdu.type = SNMP_PDU_TRAP;
+			pdu.enterprise = *eoid;
+			memcpy(pdu.agent_addr, agent_addr, 4);
+			pdu.generic_trap = generic_trap;
+			pdu.specific_trap = specific_trap;
+			pdu.time_stamp = time_stamp;
+
+			pdu.nbindings = 0;
+		} else {
+			pdu.version = SNMP_V2c;
+			pdu.type = SNMP_PDU_TRAP2;
+			pdu.request_id = reqid_next(trap_reqid);
+			pdu.error_index = 0;
+			pdu.error_status = SNMP_ERR_NOERROR;
+
+			pdu.bindings[0].var = oid_sysUpTime;
+			pdu.bindings[0].var.subs[pdu.bindings[0].var.len++] = 0;
+			pdu.bindings[0].syntax = SNMP_SYNTAX_TIMETICKS;
+			pdu.bindings[0].v.uint32 = time_stamp;
+
+			pdu.bindings[1].var = oid_snmpTrapOID;
+			pdu.bindings[1].var.subs[pdu.bindings[1].var.len++] = 0;
+			pdu.bindings[1].syntax = SNMP_SYNTAX_OID;
+			pdu.bindings[1].v.oid = *eoid;
+
+			pdu.nbindings = 2;
+		}
+
+		/* XXX */
+		
+		for (i = 0; i < nbindings; i++)
+			pdu.bindings[pdu.nbindings + i] = bindings[i];
+		pdu.nbindings += nbindings;
+		
+		if ((sndbuf = buf_alloc(1)) == NULL) {
+			syslog(LOG_ERR, "trap send buffer: %m");
+			return;
+		}
+		snmp_output(&pdu, sndbuf, &sndlen, "TRAP");
+
+		if ((len = send(t->socket, sndbuf, sndlen, 0)) == -1) {
+			syslog(LOG_ERR, "send: %m");
+		} else if ((size_t)len != sndlen) {
+			syslog(LOG_ERR, "send: short write %zu/%zu",
+			    sndlen, (size_t)len);
+		}
+
+		free(sndbuf);
+	}
+}
+#endif /* SMUX_SUPPORT */
+
 /*
  * RFC 3413 SNMP Management Target MIB
  */

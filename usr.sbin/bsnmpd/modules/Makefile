@@ -13,6 +13,7 @@ SUBDIR=	${_snmp_atm} \
 	snmp_hast \
 	snmp_hostres \
 	snmp_mibII \
+	snmp_smux \
 	snmp_target \
 	snmp_usm \
 	snmp_vacm \

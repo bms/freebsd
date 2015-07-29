@@ -982,6 +982,10 @@ parse_syntax_ipaddress(struct snmp_value *value)
 				break;
 			if (gettoken() != '.')
 				report("expecting '.' in ip address");
+#if 0	/* SMUX */
+			/* XXX Why is this needed? */	
+			gettoken();	
+#endif
 		}
 		gettoken();
 

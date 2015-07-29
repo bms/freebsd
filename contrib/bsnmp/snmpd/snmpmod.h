@@ -595,6 +595,11 @@ enum snmp_code snmp_pdu_auth_access(struct snmp_pdu *, int32_t *);
 /* sending traps */
 void snmp_send_trap(const struct asn_oid *, ...);
 
+#if 1 /* SMUX_SUPPORT */
+void snmp_smux_send_trap(const struct asn_oid *, u_char *, int32_t, int32_t,
+			 uint32_t, struct snmp_value *, u_int);
+#endif
+
 /*
  * Action support
  */
@@ -621,5 +626,11 @@ int index_compare_off(const struct asn_oid *, u_int, const struct asn_oid *,
     u_int);
 void index_append(struct asn_oid *, u_int, const struct asn_oid *);
 void index_append_off(struct asn_oid *, u_int, const struct asn_oid *, u_int);
+
+/*
+ * Tree registration support
+ */
+int tree_register_oid(const struct snmp_node *, struct lmodule *);
+void tree_unregister_oid(const struct snmp_node *, struct lmodule *);
 
 #endif

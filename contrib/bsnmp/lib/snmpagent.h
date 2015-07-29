@@ -78,8 +78,9 @@ struct snmp_dependency {
  * The TREE
  */
 enum snmp_node_type {
-	SNMP_NODE_LEAF = 1,
-	SNMP_NODE_COLUMN
+	SNMP_NODE_LEAF		= 1,
+	SNMP_NODE_COLUMN,
+	SNMP_NODE_SMUX
 };
 
 enum snmp_op {

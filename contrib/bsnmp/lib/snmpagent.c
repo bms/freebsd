@@ -722,9 +722,10 @@ snmp_set(struct snmp_pdu *pdu, struct asn_buf *resp_b,
 			return (SNMP_RET_ERR);
 		}
 		/*
-		 * 3. Ensure the right syntax
+		 * 3. Ensure the right syntax (for local, non-SMUX/AgentX OIDs)
 		 */
-		if (np->syntax != b->syntax) {
+		if (np->type != SNMP_NODE_SMUX &&
+		    np->syntax != b->syntax) {
 			if (pdu->version == SNMP_V1) {
 				pdu->error_index = i + 1;
 				pdu->error_status = SNMP_ERR_BADVALUE; /* v2: wrongType */

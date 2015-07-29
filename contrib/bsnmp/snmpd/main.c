@@ -1464,6 +1464,12 @@ info_func(evContext ctx __unused, void *uap __unused, const void *tag __unused)
 			sprintf(buf, "COL: %s %s", tree[i].name,
 			    asn_oid2str(&tree[i].oid));
 			break;
+			
+		  case SNMP_NODE_SMUX:
+			sprintf(buf, "SMUX: %s %s", tree[i].name,
+			    asn_oid2str(&tree[i].oid));
+			break;
+			
 		}
 		syslog(LOG_DEBUG, "%s", buf);
 	}
@@ -2488,6 +2494,29 @@ tree_unmerge(struct lmodule *mod)
 				tree[d] = tree[s];
 			d++;
 		}
+	tree_size = d;
+}
+
+int
+tree_register_oid(const struct snmp_node *tree_node, struct lmodule *mod)
+{
+
+	return (tree_merge(tree_node, 1, mod));
+}
+
+void
+tree_unregister_oid(const struct snmp_node *tree_node, struct lmodule *mod)
+{
+	u_int s, d;
+
+	for(s = d = 0; s < tree_size; s++) {
+		if (tree[s].tree_data != mod ||
+		    asn_compare_oid(&tree_node->oid, &tree[s].oid) != 0) {
+			if (s != d)
+				tree[d] = tree[s];
+			d++;
+		}
+	}
 	tree_size = d;
 }
 

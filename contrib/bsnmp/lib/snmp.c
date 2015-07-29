@@ -66,8 +66,8 @@ void (*snmp_printf)(const char *, ...) = snmp_printf_func;
  * Get the next variable binding from the list.
  * ASN errors on the sequence or the OID are always fatal.
  */
-static enum asn_err
-get_var_binding(struct asn_buf *b, struct snmp_value *binding)
+enum asn_err
+snmp_get_var_binding(struct asn_buf *b, struct snmp_value *binding)
 {
 	u_char type;
 	asn_len_t len, trailer;
@@ -261,7 +261,7 @@ parse_pdus(struct asn_buf *b, struct snmp_pdu *pdu, int32_t *ip)
 			    SNMP_MAX_BINDINGS);
 			return (ASN_ERR_FAILED);
 		}
-		err1 = get_var_binding(b, v);
+		err1 = snmp_get_var_binding(b, v);
 		if (ASN_ERR_STOPPED(err1))
 			return (ASN_ERR_FAILED);
 		if (err1 != ASN_ERR_OK && err == ASN_ERR_OK) {

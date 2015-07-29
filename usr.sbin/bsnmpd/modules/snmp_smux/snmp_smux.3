@@ -1,0 +1,81 @@
+.\"
+.\" Copyright (C) 2006
+.\" 	The FreeBSD Project.
+.\" 	All rights reserved.
+.\" 
+.\" Author: Victor Cruceru <soc-victor@freebsd.org>
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\" 
+.\" THIS SOFTWARE IS PROVIDED BY AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+.\" ARE DISCLAIMED.  IN NO EVENT SHALL AUTHOR OR CONTRIBUTORS BE LIABLE
+.\" FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+.\" DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+.\" OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+.\" HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+.\" LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+.\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+.\" SUCH DAMAGE.
+.\"
+.\" $Id$
+.\"
+.Dd August 1, 2006
+.Dt snmp_smux 3
+.Os
+.Sh NAME
+.Nm snmp_smux
+.Nd "SMUX module for snmpd.
+.Sh LIBRARY
+.Pq begemotSnmpdModulePath."smux" = "/usr/lib/snmp_smux.so"
+.Sh DESCRIPTION
+The
+.Nm snmp_smux
+module implements the "SNMP MUX protocol and MIB" as standardized in RFC 1227.
+For provisioning this
+.Nm snmp_smux
+module these configuration items shall be used:
+.Bl -tag -width "XXXXXXXXX"
+.It Va begemotSmuxAddr 
+TCP/IPv4 address to listen for incoming connections from SMUX peers. If not 
+specified the  SMUX module will listen on 0.0.0.0
+.It Va begemotSmuxPort
+The TCP/IPv4 port used to listen for incoming connections from SMUX peers. 
+Default is 199.
+.It Va begemotSmuxPeerPassword.<OID>
+The password used to authenticate the peer identified by <OID>
+.It Va begemotSmuxPeerStatus.<OID>
+Used to enable the SMUX peer identified by <OID>. Possible values are 1 for
+a valid peer or 2 for an invalid peer.
+.It Va begemotSmuxPeerTimeout.<OID>
+Used to specify a timeout in seconds to block when reading data from the SMUX
+peer identified by <OID>. Default is 3 seconds. Accepted values are between
+1 and 256 seconds.
+.El
+.Sh RESTRICTIONS
+Only one varbind is encoded into GET, GET-NEXT and SET SMUX requests from 
+SNMP master agent to the SMUX peers while the RFC 1227 allows  to encode 
+more varbinds in each of these requests.
+.Sh FILES
+.Bl -tag -width "XXXXXXXXX"
+.It Pa /usr/share/snmp/defs/smux_tree.def
+The description of the MIB tree implemented by
+.Nm .
+.It Pa /usr/share/snmp/mibs/SMUX-MIB.txt
+.It Pa /usr/share/snmp/mibs/BEGEMOT-SMUX-MIB.txt
+This is the MIB that is implemented by this module for its provisioning
+.El
+.Sh SEE ALSO
+.Xr bsnmpd 1 ,
+.Xr gensnmptree 1 ,
+.Xr snmpmod 3
+.Sh AUTHORS
+.An Victor Cruceru Aq soc-victor@freebsd.org

@@ -1,0 +1,145 @@
+--
+-- Copyright (c) 2006 
+--	The FreeBSD Project
+--	All rights reserved.
+--
+-- Author: Victor Cruceru <soc-victor@freebsd.org>
+--
+-- Redistribution and use in source and binary forms, with or without
+-- modification, are permitted provided that the following conditions
+-- are met:
+-- 1. Redistributions of source code must retain the above copyright
+--    notice, this list of conditions and the following disclaimer.
+-- 2. Redistributions in binary form must reproduce the above copyright
+--    notice, this list of conditions and the following disclaimer in the
+--    documentation and/or other materials provided with the distribution.
+--
+-- THIS SOFTWARE IS PROVIDED BY AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+-- ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+-- IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+-- ARE DISCLAIMED.  IN NO EVENT SHALL AUTHOR OR CONTRIBUTORS BE LIABLE
+-- FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+-- DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+-- OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+-- HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+-- LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+-- OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+-- SUCH DAMAGE.
+--
+--
+-- Configuration stuff for SMUX implementation.
+--
+BEGEMOT-SMUX-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    Unsigned32, IpAddress
+        FROM SNMPv2-SMI
+    MODULE-IDENTITY, OBJECT-TYPE, TimeTicks
+	FROM SNMPv2-SMI
+    begemot
+	FROM BEGEMOT-MIB;
+
+begemotSmux MODULE-IDENTITY
+    LAST-UPDATED "200606010000Z"
+    ORGANIZATION "German Aerospace Center"
+    CONTACT-INFO
+	    "		Hartmut Brandt
+
+	     Postal:	German Aerospace Center
+			Oberpfaffenhofen
+			82234 Wessling
+			Germany
+
+	     Fax:	+49 8153 28 2843
+
+	     E-mail:	harti@freebsd.org"
+    DESCRIPTION
+	    "The MIB for SMUX module implementation."
+
+    ::= { begemot 203 }
+
+begemotSmuxObjects	OBJECT IDENTIFIER ::= { begemotSmux 1 }
+
+
+
+begemotSmuxAddr OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+            "Address to bind for incomming smux connections"
+    ::= { begemotSmuxObjects 1 }
+
+
+
+begemotSmuxPort OBJECT-TYPE
+    SYNTAX      INTEGER (1..65535)
+    MAX-ACCESS  read-write
+    STATUS      current
+    DESCRIPTION
+            "Smux port to bind on"
+    DEFVAL      { 199 }
+    ::= { begemotSmuxObjects 2 }
+
+begemotSmuxPeerTable OBJECT-TYPE
+    SYNTAX	SEQUENCE OF BegemotSmuxPeerEntry
+    MAX-ACCESS	not-accessible
+    STATUS	current
+    DESCRIPTION
+	    "A table with descriptions of OIDs and passwords
+	    for remote SMUX peers."
+    ::= { begemotSmuxObjects 3 }
+
+begemotSmuxPeerEntry OBJECT-TYPE
+    SYNTAX	BegemotSmuxPeerEntry
+    MAX-ACCESS	not-accessible
+    STATUS	current
+    DESCRIPTION
+	    "An entry in the table descriptions of OIDs and passwords
+	    for remote SMUX peers."
+    INDEX	{ begemotSmuxPeerOid }
+    ::= { begemotSmuxPeerTable 1 }
+
+BegemotSmuxPeerEntry ::= SEQUENCE {
+    begemotSmuxPeerOid	OBJECT IDENTIFIER,
+    begemotSmuxPeerPassword	OCTET STRING,
+    begemotSmuxPeerTimeout	INTEGER,
+    begemotSmuxPeerStatus	INTEGER
+}
+
+begemotSmuxPeerOid OBJECT-TYPE
+    SYNTAX	OBJECT IDENTIFIER
+    MAX-ACCESS	not-accessible
+    STATUS	current
+    DESCRIPTION
+	    "Unique OID to distinguish among incomming peers"
+    ::= { begemotSmuxPeerEntry 1 }
+
+begemotSmuxPeerPassword OBJECT-TYPE
+    SYNTAX      OCTET STRING (SIZE(1..64))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "The password used to authentificate the peer."
+    ::= { begemotSmuxPeerEntry 2 }
+
+begemotSmuxPeerTimeout OBJECT-TYPE
+    SYNTAX      INTEGER(1..128)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+            "Read timeout in seconds from this SMUX peer"
+    DEFVAL      { 3 }
+    ::= { begemotSmuxPeerEntry 3 }
+
+begemotSmuxPeerStatus OBJECT-TYPE
+    SYNTAX	INTEGER { valid(1), invalid(2) }
+    MAX-ACCESS	read-create
+    STATUS	current
+    DESCRIPTION
+	    "Set status to valid(1) to create entry, set it 
+	     to invalid(2) to delete it."
+    ::= { begemotSmuxPeerEntry 4 }
+
+
+END
