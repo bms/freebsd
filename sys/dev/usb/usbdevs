@@ -3367,6 +3367,7 @@ product OQO ETHER01		0x8150	model 01 Ethernet interface
 
 /* Ours Technology Inc. */
 product OTI DKU5		0x6858	DKU-5 Serial
+product OTI USB_LAPLINK		0x2208	USB Laplink
 
 /* Owen.ru products */
 product OWEN AC4		0x0004	AC4 USB-RS485 converter
