@@ -1,7 +1,8 @@
-/*	$NetBSD: if_bridgevar.h,v 1.4 2003/07/08 07:13:50 itojun Exp $	*/
-
+#ifndef _NET_BR_EAPS_H_
+#define _NET_BR_EAPS_H_
 /*
- * Copyright 2001 Wasabi Systems, Inc.
+ * CHANGEME:
+ * Copyright XXXX.
  * All rights reserved.
  *
  * Written by Jason R. Thorpe for Wasabi Systems, Inc.
@@ -36,47 +37,16 @@
  */
 
 /*
- * Copyright (c) 1999, 2000 Jason L. Wright (jason@thought.net)
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *	This product includes software developed by Jason L. Wright
- * 4. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * OpenBSD: if_bridge.h,v 1.14 2001/03/22 03:48:29 jason Exp
- *
- * $FreeBSD$
- */
-
-/*
- * Data structure and control definitions for STP interfaces.
+ * Data structure and control definitions for EAPS interfaces.
+ * XXX Tear into any of the below pasted blocks at will.
  */
 
 #include <sys/callout.h>
 #include <sys/queue.h>
 
+/* XXX Userspace-visible declarations */
+
+#if 0
 /* STP port states */
 #define	BSTP_IFSTATE_DISABLED	0
 #define	BSTP_IFSTATE_LISTENING	1
@@ -100,8 +70,13 @@
 #define	BSTP_ROLE_ALTERNATE	3
 #define	BSTP_ROLE_BACKUP	4
 
+#endif
+
+/* XXX Kernel-only declarations */
+
 #ifdef _KERNEL
 
+#if 0
 /* STP port flags */
 #define	BSTP_PORT_CANMIGRATE	0x0001
 #define	BSTP_PORT_NEWINFO	0x0002
@@ -181,6 +156,9 @@
 #define	BSTP_TICK_VAL		(1 * 256)	/* in 256ths of a second */
 #define	BSTP_LINK_TIMER		(BSTP_TICK_VAL * 15)
 
+#endif /* AAPS */
+
+#if 0
 /*
  * Driver callbacks for STP state changes
  */
@@ -190,7 +168,9 @@ struct bstp_cb_ops {
 	bstp_state_cb_t	bcb_state;
 	bstp_rtage_cb_t	bcb_rtage;
 };
+#endif
 
+#if 0
 /*
  * Because BPDU's do not make nicely aligned structures, two different
  * declarations are used: bstp_?bpdu (wire representation, packed) and
@@ -361,15 +341,19 @@ struct bstp_state {
 	bstp_rtage_cb_t		bs_rtage_cb;
 	struct vnet		*bs_vnet;
 };
+#endif
 
+#if 0
 #define	BSTP_LOCK_INIT(_bs)	mtx_init(&(_bs)->bs_mtx, "bstp", NULL, MTX_DEF)
 #define	BSTP_LOCK_DESTROY(_bs)	mtx_destroy(&(_bs)->bs_mtx)
 #define	BSTP_LOCK(_bs)		mtx_lock(&(_bs)->bs_mtx)
 #define	BSTP_UNLOCK(_bs)	mtx_unlock(&(_bs)->bs_mtx)
 #define	BSTP_LOCK_ASSERT(_bs)	mtx_assert(&(_bs)->bs_mtx, MA_OWNED)
+#endif
 
-extern const uint8_t bstp_etheraddr[];
+extern const uint8_t eaps_etheraddr[];
 
+#if 0
 void	bstp_attach(struct bstp_state *, struct bstp_cb_ops *);
 void	bstp_detach(struct bstp_state *);
 void	bstp_init(struct bstp_state *);
@@ -392,5 +376,8 @@ int	bstp_set_autoedge(struct bstp_port *, int);
 int	bstp_set_ptp(struct bstp_port *, int);
 int	bstp_set_autoptp(struct bstp_port *, int);
 void	bstp_input(struct bstp_port *, struct ifnet *, struct mbuf *);
+#endif
 
 #endif /* _KERNEL */
+
+#endif /* _NET_BR_EAPS_H_ */
