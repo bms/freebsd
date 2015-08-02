@@ -129,6 +129,9 @@ __FBSDID("$FreeBSD$");
 #include <net/if_bridgevar.h>
 #include <net/if_llc.h>
 #include <net/if_vlan_var.h>
+#ifdef EAPS
+#include <net/br_eaps.h>
+#endif
 
 #include <net/route.h>
 
@@ -184,6 +187,9 @@ struct bridge_iflist {
 	uint32_t		bif_addrmax;	/* max # of addresses */
 	uint32_t		bif_addrcnt;	/* cur. # of addresses */
 	uint32_t		bif_addrexceeded;/* # of address violations */
+#ifdef EAPS
+	/* Per-interface-list EAPS state goes here */
+#endif
 };
 
 /*
@@ -2269,6 +2275,16 @@ bridge_input(struct ifnet *ifp, struct mbuf *m)
 	bridge_span(sc, m);
 
 	if (m->m_flags & (M_BCAST|M_MCAST)) {
+#ifdef EAPS
+		/* EAPS: Possible slow path when called with BRIDGE_LOCK() held. */
+		/* XXX We need a similar breakout for EAPS control traffic. */
+		if (memcmp(eh->ether_dhost, eaps_etheraddr, ETHER_ADDR_LEN) == 0) {
+			/*eaps_input(&bif->bif_eaps, ifp, m);*/ /* consumes mbuf */
+			eaps_input(NULL, ifp, m); /* consumes mbuf */
+			BRIDGE_UNLOCK(sc);
+			return (NULL);
+		}
+#endif
 		/* Tap off 802.1D packets; they do not get forwarded. */
 		if (memcmp(eh->ether_dhost, bstp_etheraddr,
 		    ETHER_ADDR_LEN) == 0) {
