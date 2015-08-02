@@ -58,6 +58,8 @@ __FBSDID("$FreeBSD$");
 /*#include <net/bridgestp.h>*/
 #include <net/eaps.h>
 
+#include <machine/in_cksum.h>
+
 /* compare two OUI values for equality */
 #define IEEE_OUI_ARE_EQUAL(a, b) \
 	(((uint8_t *)(a))[0] == ((uint8_t *)(b))[0] && \
@@ -401,6 +403,7 @@ eaps_send_bpdu(struct eaps_state *bs, struct eaps_port *bp,
 }
 #endif
 
+#if 0
 static int
 eaps_pdu_flags(struct eaps_port *bp)
 {
@@ -457,103 +460,136 @@ eaps_pdu_flags(struct eaps_port *bp)
 	}
 	return (flags);
 }
+#endif
 
 void
-eaps_input(struct eaps_port *bp, struct ifnet *ifp, struct mbuf *m)
+eaps_dump_pdu(struct eaps_pdu *emsg)
 {
-	struct eaps_state *bs = bp->bp_bs;
-	struct ether_header *eh;
-	//struct eaps_tbpdu tpdu;
-	uint16_t len;
-	struct llc *l;
 
-#if 0
-	if (bp->bp_active == 0) {
-		m_freem(m);
-		return;
-	}
-#endif
+	DPRINTF("msg in: origin=%6D cvlan=%d\n", emsg->eaps_origin, ":",
+	    emsg->eaps_cvlan);
+	DPRINTF("type=%d seq=%0d state=%d hello=%d fail=%d\n",
+	    emsg->eaps_type, emsg->eaps_seq, emsg->eaps_state,
+	    emsg->eaps_hello, emsg->eaps_fail);
+}
 
-#if 0
-	EAPS_LOCK(bs);
-#endif
+void
+eaps_input(struct eaps_port *bp __unused, struct ifnet *ifp, struct mbuf *mh)
+{
+	static const ssize_t EDP_MINPULL = LLC_SNAPFRAMELEN + sizeof(struct edp_hdr);
+	struct mbuf		*m, *m0;
+	struct ether_header	*eh;
+	struct llc		*l;
+	struct edp_hdr		*edp;
+	struct edp_tlv_hdr	*etv;
+	uint16_t		 elen;		/* 802.3 frame w/o SNAP */
+	uint16_t		 edp_len;	/* EDP frame */
+	int			 off; /* offset beyond EDP header */
 
+	/* eh->eh_dst has already been checked by bridge_input() */
+	m0 = m = mh;
 	eh = mtod(m, struct ether_header *);
-
-	len = ntohs(eh->ether_type);
-	//if (len < sizeof(tpdu))
-	//	goto out;
-
-	/* XXX Would additionally check ether dst here with eaps_etheraddr. */
-
+	elen = ntohs(eh->ether_type);
+	if (len < ETHER_HDR_LEN + EDP_MINPULL) {
+		DPRINTF("msg in: short packet\n");
+		goto out;
+	}
 	m_adj(m, ETHER_HDR_LEN);
 
-	/* XXX Pull up to minimum size eth + llc-snap + edp */
+	/* Drop FCS and trailers if present */
 	if (m->m_pkthdr.len > len)
 		m_adj(m, len - m->m_pkthdr.len);
-	if (m->m_len < sizeof(tpdu) &&
-	    (m = m_pullup(m, sizeof(tpdu))) == NULL)
-		goto out;
 
-	/* basic packet checks */
+	/* Pull up to minimum size eth + llc-snap + edp */
+	if (m->m_len < EDP_MINPULL &&
+	    (m = m_pullup(m, EDP_MINPULL) == NULL)) {
+		DPRINTF("msg in: minpull up failed\n");
+		goto out;
+	}
+
+	/* Check payload is LLC SNAP + EDP */
+	l = mtod(m, struct llc *);
 	if (l->llc_dsap != LLC_SNAP_LSAP ||
-	    l->llc_ssap != LLC_SNAP_LSAP)
-		goto out;
-
-	if (l->llc_snap.control != LLC_UI ||
+	    l->llc_ssap != LLC_SNAP_LSAP ||
+	    l->llc_snap.control != LLC_UI ||
 	    !IEEE_OUI_ARE_EQUAL(&l->llc_snap.org_code[0], extreme_oui) ||
-	    l->llc_snap.ether_type != EDP_SNAP_PID)
+	    l->llc_snap.ether_type != EDP_SNAP_PID) {
+		DPRINTF("msg in: bad llc framing\n");
+		goto out;
+	}
+
+	/* Parse EDP header; m points to it now */
+	m_adj(m, LLC_SNAPFRAMELEN);
+	m0 = m;
+	edp = mtod(m, struct edp_hdr *);
+	if (edp->edp_version != EDP_VERSION_1) {
+		DPRINTF("msg in: got eaps v%d \n", edp->edp_version); 
+		goto out;
+	}
+	edp_len = ntohs(edp->edp_len);
+	if (edp_len >= m->m_pkthdr.len) {
+		DPRINTF("msg in: edp len (%d) > pkt len (%d)\n",
+		    edp_len, m->m_pkthdr.len);
+		goto out;
+	}
+	if (in_cksum_skip(m, edp_len, 0) != 0) {
+		DPRINTF("msg in: bad cksum\n");
+		goto out;
+	}
+	off = sizeof(*edp);
+
+	/* Parse TLVs (inc. EAPS) up to end of payload */
+	mplen = m0->m_pkthdr.len;
+	while (mplen - off >= sizeof(*etvp)) {
+		struct edp_tlv_hdr	 etv;
+		struct edp_tlv_hdr	*etvp;
+		int			 eoff; /* pulldown offset to eaps_pdu */
+
+        	etvp = (struct edp_tlv_hdr *)(mtod(m0, caddr_t) + off);
+		etv = *etvp;	/* 4 byte fetch w/o pullup */
+		if (etv->etv_marker != EDP_MARKER)
+			break;
+		etv.etv_len = ntohs(etv->etv_len);
+		if (etv.etv_len > mplen - off) {
+			DPRINTF("msg in: truncated TLV, exceeds pktlen\n");
+			goto out;
+		}
+		if (etv.etv_tag == EDP_TAG_EAPS) {
+
+			eoff = 0;
+			m = m_pulldown(m0, off + sizeof(etv),
+			    sizeof(struct eaps_pdu), &eoff);
+			if (!m) {
+				DPRINTF("msg in: m_pulldown() failed\n");
+				goto out;
+			}
+        		emsg = (struct eaps_pdu *)(mtod(m, caddr_t) + eoff);
+			eaps_dump_pdu(emsg);
+
+			if (emsg->eaps_version != EAPS_VERSION_1) {
+				DPRINTF("msg in: unknown EAPS version %d\n",
+				    emsg->eaps_version);
+				goto out;
+			}
+			if (emsg->eaps_type < EAPS_P_HEALTH &&
+			    emsg->eaps_type > EAPS_P_LINK_UP) {
+				DPRINTF("msg in: unknown EAPS type %d\n",
+				    emsg->eaps_type);
+				goto out;
+			}
+
+			/* TODO: Process input in EAPS frame commands. */
+		}
+		off += etv.etv_len;
+	};
+	if (off < mplen) {
+		DPRINTF("msg in: %d trailing bytes\n", mplen - off);
 		goto out;
 
-	/* ...now parse EDP header and checksum, index into it, don't pullup.  */
-	/* ... while we have TLVs... */
-		/* ...now parse EAPS fields */
-		/* ...now parse or discard additional TLVs fields */
-	/* done */
-
-#if 0
-	/*
-	 * We can treat later versions of the PDU as the same as the maximum
-	 * version we implement. All additional parameters/flags are ignored.
-	 */
-	if (tpdu.tbu_protover > EAPS_PROTO_MAX)
-		tpdu.tbu_protover = EAPS_PROTO_MAX;
-
-	if (tpdu.tbu_protover != bp->bp_protover) {
-		/*
-		 * Wait for the migration delay timer to expire before changing
-		 * protocol version to avoid flip-flops.
-		 */
-		if (bp->bp_flags & EAPS_PORT_CANMIGRATE)
-			eaps_set_port_proto(bp, tpdu.tbu_protover);
-		else
-			goto out;
 	}
-#endif
-
-#if 0
-	/* Clear operedge upon receiving a PDU on the port */
-	bp->bp_operedge = 0;
-	eaps_timer_start(&bp->bp_edge_delay_timer,
-	    EAPS_DEFAULT_MIGRATE_DELAY);
-
-	switch (tpdu.tbu_protover) {
-		case EAPS_PROTO_STP:
-			eaps_received_stp(bs, bp, &m, &tpdu);
-			break;
-
-		case EAPS_PROTO_RSTP:
-			eaps_received_rstp(bs, bp, &m, &tpdu);
-			break;
-	}
-#endif
-
 out:
-#if 0
-	EAPS_UNLOCK(bs);
-#endif
 	if (m)
-		m_freem(m);
+		m_freem(m); /* Just dispose of it for now. */
 }
 
 #if 0
@@ -581,7 +617,6 @@ eaps_received_stp(struct eaps_state *bs, struct eaps_port *bp,
 		break;
 	}
 }
-#endif
 
 static void
 eaps_received_rstp(struct eaps_state *bs, struct eaps_port *bp,
@@ -2148,11 +2183,15 @@ eaps_modevent(module_t mod, int type, void *data)
 {
 	switch (type) {
 	case MOD_LOAD:
+#if 0
 		mtx_init(&eaps_list_mtx, "eaps list", NULL, MTX_DEF);
 		LIST_INIT(&eaps_list);
+#endif
 		break;
 	case MOD_UNLOAD:
+#if 0
 		mtx_destroy(&eaps_list_mtx);
+#endif
 		break;
 	default:
 		return (EOPNOTSUPP);
@@ -2169,6 +2208,7 @@ static moduledata_t eaps_mod = {
 DECLARE_MODULE(br_eaps, eaps_mod, SI_SUB_PSEUDO, SI_ORDER_ANY);
 MODULE_VERSION(br_eaps, 1);
 
+#if 0
 void
 eaps_attach(struct eaps_state *bs, struct eaps_cb_ops *cb)
 {
@@ -2310,3 +2350,4 @@ eaps_destroy(struct eaps_port *bp)
 	taskqueue_drain(taskqueue_swi, &bp->bp_rtagetask);
 	taskqueue_drain(taskqueue_swi, &bp->bp_mediatask);
 }
+#endif
