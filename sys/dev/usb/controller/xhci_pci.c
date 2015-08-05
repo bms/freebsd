@@ -98,6 +98,8 @@ xhci_pci_match(device_t self)
 	switch (device_id) {
 	case 0x01941033:
 		return ("NEC uPD720200 USB 3.0 controller");
+	case 0x00151912:
+		return ("Renesas uPD720202 USB 3.0 controller");
 
 	case 0x10421b21:
 		return ("ASMedia ASM1042 USB 3.0 controller");
