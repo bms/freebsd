@@ -724,8 +724,14 @@ xhci_dbc_detect(device_t self)
 {
 	struct xhci_softc *sc = device_get_softc(self);
 	uint32_t cparams;
+#ifdef notyet
 	uint32_t dcctrl;
 	uint32_t dcst;
+#endif
+#ifdef notyet
+	uint32_t dcddi1;
+	uint32_t dcddi2;
+#endif
 	uint32_t eecp;
 	uint32_t eec;
 	uint32_t noff;
@@ -755,22 +761,48 @@ xhci_dbc_detect(device_t self)
 	DPRINTF("DCST=0x%x\n", dcst);
 	if (dcst == -1)
 		return (USB_ERR_NO_PIPE); /* not responding */
+		
+	device_printf(self, "Debug Capability detected\n");
+	return (0);
 
-	/* Write DCE enable for Dbc-Off->Dbc-Disconnected */
-	/* XXX Don't do this in final code. */
+	/* TODO: Set up DbC ERST ring */
+	
+#ifdef notyet
+	/* TODO: Allocate DbC info context */
+	
+	/* TODO: Set up DbC info context */
+	err = xhci_dbc_ic_alloc(&ctx->dbcic);
+#endif
+
+	/* TODO: Set up DbC endpoint contexts: ctx: ctx_in, ctx_out */
+
+#ifdef notyet
+	/* Bang the registers to set VID/PID 	*/
+	dcddi1 = (USB_VENDOR_FREEBSD << 16) | XHCI_DBC_PROTO_VENDOR;
+	XWRITE4(sc, dbc, XHCI_DCDDI1, htole32(dcddi1));
+	dcddi2 = (USB_PRODUCT_FREEBSD_XHCI_DBC << 16) | DBC_RAW_REV_1;
+	XWRITE4(sc, dbc, XHCI_DCDDI2, htole32(dcddi2));
+#endif
+	
+#ifdef notyet	
+	/* TODO: Activation comes last. */
+	
+	/* TODO: Bang XHCI_DCCP to point to the DbCC. */
+	
+	/* Write DCE enable for Dbc-Off->Dbc-Disconnected [Sec. 7.6.8.6] */
 	dcctrl = XREAD4(sc, dbc, XHCI_DCCTRL);
 	if (dcctrl == 0xFFFFFFFF)
-		return (USB_ERR_NO_PIPE); /* not responding */
+		return (USB_ERR_NO_PIPE); /* XXX not responding */
 	dcctrl |= XHCI_DCCTRL_DCE;
 	XWRITE4(sc, dbc, XHCI_DCCTRL, dcctrl);
 	dcctrl = XREAD4(sc, dbc, XHCI_DCCTRL);
 	if (dcctrl == 0xFFFFFFFF)
-		return (USB_ERR_NO_PIPE); /* not responding */
+		return (USB_ERR_NO_PIPE); /* XXX not responding */
 	DPRINTF("DCCTRL=0x%x\n", dcctrl);
-
 	/* note: if port == 0, capability is not mapped to a port */
 	port = dcst >> 24;
 	device_printf(self, "Debug Capability on root port %d\n", port);
+#endif
 
 	return (0);
 }
@@ -795,11 +827,11 @@ xhci_dbc_ic_alloc(struct xhci_dbc_ic *pic)
 
 	sp = (struct usb_string_lang *)&dbcic_descs[0];
 	for (i = 0; i < DBCIC_MAX_DESCS; i++, sp++) {
+		/* NOTE: bLength is the sizeof(struct). */
 		len = sp->bLength;
 		addr = malloc(len, M_USBHC, M_NOWAIT); /* XXX */
 		if (!addr)
 			break;
-		/* NOTE: bLength is all inclusive. */
 		memcpy(addr, sp, len);
 		pic->aqwDesc[i] = htole64((uintptr_t)addr);
 		pic->abyStrlen[i] = len;

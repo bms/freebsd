@@ -203,6 +203,8 @@
 #define	XHCI_DCPORTSC	0x28	/* DbC Port Status/Control Register */
 #define	XHCI_DCCP	0x30	/* DbC Context Pointer */
 #define	XHCI_DCDDI1	0x38	/* DbC Device Descriptor Info 1 */
+#define	 XHCI_DBC_PROTO_VENDOR	0	/* Vendor-specific protocol */
+#define	 XHCI_DBC_PROTO_GNU	1	/* GDB Remote Serial protocol */
 #define	XHCI_DCDDI2	0x3C	/* DbC Device Descriptor Info 2 */
 
 /* XHCI legacy support */
