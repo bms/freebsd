@@ -82,6 +82,9 @@
 
 #include <dev/usb/controller/xhci.h>
 #include <dev/usb/controller/xhcireg.h>
+#ifdef USB_DBGCAP
+#include <dev/usb/controller/xhci_dbc.h>
+#endif
 
 #define	XHCI_BUS2SC(bus) \
    ((struct xhci_softc *)(((uint8_t *)(bus)) - \
@@ -171,6 +174,43 @@ static void xhci_ctx_set_le64(struct xhci_softc *sc, volatile uint64_t *ptr, uin
 #ifdef USB_DEBUG
 static uint64_t xhci_ctx_get_le64(struct xhci_softc *sc, volatile uint64_t *ptr);
 #endif
+#ifdef USB_DBGCAP
+static usb_error_t xhci_dbc_ic_alloc(struct xhci_dbc_ic *);
+static void xhci_dbc_ic_free(struct xhci_dbc_ic *);
+#ifdef USB_DEBUG
+static void xhci_dbc_ic_dump(struct xhci_dbc_ic *);
+#endif
+#endif
+
+#ifdef USB_DBGCAP
+/*
+ * Fixed descriptors for the xHCI Debug Capability.
+ * The following strings are encoded as UTF-16, but are embedded in
+ * C89 string literals. As this code uses the USB_MAKE_STRING_DESC() macro,
+ * the trailing NUL is kept.
+ * XXX: MOVEME: These should go in their own leaf file eventually. -bms
+ */
+
+#define STRING_DBC_RAW_VENDOR	\
+	"F\0r\0e\0e\0B\0S\0D"   /* UTF-16: "FreeBSD" */
+#define STRING_DBC_RAW_PRODUCT	\
+	"R\0a\0w\0 \0x\0H\0C\0I\0 \0D\0B\0C"  /* UTF-16: "Raw xHCI DBC" */
+#define STRING_DBC_RAW_SERIAL	\
+	"0\01\02\03\04\05\06\07\08\09"   /* UTF-16: "0123456789" */
+#define DBC_RAW_REV_1 0x0001  /* First revision */
+
+USB_MAKE_STRING_DESC(STRING_DBC_RAW_VENDOR, dbc_raw_vendor);
+USB_MAKE_STRING_DESC(STRING_DBC_RAW_PRODUCT, dbc_raw_product);
+USB_MAKE_STRING_DESC(STRING_DBC_RAW_SERIAL, dbc_raw_serial);
+
+/* Convenience array for initialization */
+static const void *dbcic_descs[DBCIC_MAX_DESCS] = {
+	&usb_string_lang_en,
+	&dbc_raw_vendor,
+	&dbc_raw_product,
+	&dbc_raw_serial
+};
+#endif /* USB_DBGCAP */
 
 extern struct usb_bus_methods xhci_bus_methods;
 
@@ -734,6 +774,90 @@ xhci_dbc_detect(device_t self)
 
 	return (0);
 }
+
+/*
+ * Allocate and map the xHCI DbC Info Context (dbcic).
+ *  This is NOT the SAME as the whole DBC; here, we only
+ *  set up the first part of the descriptor containing the strings.
+ * NOTE: uintptr_t cast required for 32-bit hosts.
+ * TODO: Change memory allocations to DMA coherent ones.
+ * FUTURE: Make presented DbC context dynamically loadable to
+ * support e.g. the GDB stub.
+ */
+static usb_error_t
+xhci_dbc_ic_alloc(struct xhci_dbc_ic *pic)
+{
+	struct usb_string_lang *sp;
+	void *addr;
+	int i, len;
+
+	memset(pic, 0, sizeof(struct xhci_dbc_ic));
+
+	sp = (struct usb_string_lang *)&dbcic_descs[0];
+	for (i = 0; i < DBCIC_MAX_DESCS; i++, sp++) {
+		len = sp->bLength;
+		addr = malloc(len, M_USBHC, M_NOWAIT); /* XXX */
+		if (!addr)
+			break;
+		/* NOTE: bLength is all inclusive. */
+		memcpy(addr, sp, len);
+		pic->aqwDesc[i] = htole64((uintptr_t)addr);
+		pic->abyStrlen[i] = len;
+	}
+	if (i == DBCIC_MAX_DESCS)
+		return (0);
+
+	/*
+	 * Back out of allocations.
+	 * XXX We don't need bLength for usb_free(), BUT
+	 * we MAY need it for busdma-style allocations.
+	 * TODO: Use host-side pointers; don't decode controller view.
+	 */
+	for (--i; i >= 0; --i) {
+		addr = (void *)(uintptr_t)le64toh(pic->aqwDesc[i]);
+		free(addr, M_USBHC);
+	}
+
+	return (USB_ERR_NOMEM);
+}
+
+/* TODO: Use host-side pointers; don't decode controller view. */
+static void
+xhci_dbc_ic_free(struct xhci_dbc_ic *pic)
+{
+	void *addr;
+	int i;
+
+	for (i = 0; i < DBCIC_MAX_DESCS; i++) {
+		addr = (void *)(uintptr_t)le64toh(pic->aqwDesc[i]);
+		free(addr, M_USBHC);
+	}
+}
+
+#ifdef USB_DEBUG
+static void
+xhci_dbc_ic_dump(struct xhci_dbc_ic *pic)
+{
+	void *addr;
+	int i;
+
+	/*
+	 * Dump only the mapped addresses we poked into the DbCIC earlier.
+	 * Strings are UTF-16 and would need decoding anyway.
+	 */
+	DPRINTFN(5, "dbcic = %p\n", pic);
+	for (i = 0; i < DBCIC_MAX_DESCS; i++) {
+		addr = (void *)(uintptr_t)le64toh(pic->aqwDesc[i]);
+		DPRINTFN(5, "aqwDesc[%d] = 0x%016llx\n", i, (long long)addr);
+#if 0
+		int len;
+		len = pic->abyStrlen;
+		DPRINTFN(5, "aqwDesc[%d] -> \"%*.*s\"\n", i, len, len, addr);
+#endif
+	}
+}
+#endif /* USB_DEBUG */
+
 #endif /* USB_DBGCAP */
 
 static void
