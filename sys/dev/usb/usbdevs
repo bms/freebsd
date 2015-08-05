@@ -775,6 +775,7 @@ vendor MOSCHIP		0x9710	MosChip Semiconductor
 vendor NETGEAR4		0x9846  Netgear
 vendor MARVELL		0x9e88	Marvell Technology Group Ltd.
 vendor 3COM3		0xa727	3Com
+vendor FREEBSD		0xabcd	FreeBSD
 vendor EVOLUTION	0xdeee	Evolution Robotics products
 vendor DATAAPEX		0xdaae	DataApex
 vendor HP2		0xf003	Hewlett Packard
@@ -1842,6 +1843,9 @@ product FOSSIL WRISTPDA		0x0002	Wrist PDA
 /* Foxconn products */
 product FOXCONN TCOM_TC_300	0xe000	T-Com TC 300
 product FOXCONN PIRELLI_DP_L10	0xe003	Pirelli DP-L10
+
+/* FreeBSD products */
+product FREEBSD XHCI_DBC	0x1080	Raw xHCI Debug Interface
 
 /* Freecom products */
 product FREECOM DVD		0xfc01	DVD drive
