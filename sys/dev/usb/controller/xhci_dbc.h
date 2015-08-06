@@ -38,7 +38,8 @@ enum xhci_dbcic_desc {
 	DBCIC_PRODUCT_DESC,
 	DBCIC_SERIAL_DESC
 };
-#define DBCIC_MAX_DESCS		4
+#define DBCIC_MAX_DESCS		4	/* number of descriptors in DbC IC */
+#define DBCIC_DESC_SIZE_MAX	256	/* maximum size of each descriptor */
 
 /*
  * Controller-visible structures.
@@ -51,9 +52,11 @@ struct xhci_dbc_ic {
 } __packed;
 
 struct xhci_dbc_ctx {
-	struct xhci_dbc_ic	dbcic;
-	struct xhci_endp_ctx	ctx_out; 	/* [Sec. 6.2.3] */
-	struct xhci_endp_ctx	ctx_in;
+	struct xhci_dbc_ic		 dbcic;	/* Info context; 'personality' */
+	struct xhci_endp_ctx	 ctx_out; 	/* [Sec. 6.2.3] */
+	uint32_t			 reserved00[8];
+	struct xhci_endp_ctx	 ctx_in;
+	uint32_t			 reserved01[8];
 } __packed;
 
 /*
