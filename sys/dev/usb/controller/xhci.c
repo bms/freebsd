@@ -723,19 +723,27 @@ int
 xhci_dbc_detect(device_t self)
 {
 	struct xhci_softc *sc = device_get_softc(self);
+#ifdef notyet
+	struct usb_page_cache	*pc;
+	struct usb_page		*pg;
+	struct xhci_dbc		*dbc;
+	int				 err;
+#endif
 	uint32_t cparams;
 #ifdef notyet
 	uint32_t dcctrl;
-	uint32_t dcst;
 #endif
 #ifdef notyet
 	uint32_t dcddi1;
 	uint32_t dcddi2;
 #endif
+	uint32_t dcst;
 	uint32_t eecp;
 	uint32_t eec;
 	uint32_t noff;
+#ifdef notyet
 	uint8_t  port;
+#endif
 
 	sc->sc_dbc_off = noff = -1;
 	cparams = XREAD4(sc, capa, XHCI_HCSPARAMS0);
@@ -764,9 +772,19 @@ xhci_dbc_detect(device_t self)
 		
 	device_printf(self, "Debug Capability detected\n");
 	return (0);
-
-	/* TODO: Set up DbC ERST ring */
 	
+#ifdef notyet
+	/* TODO: Set up DbC ERST ring. */
+	dbc = &sc->sc_hw.dbc;
+	snprintf(&dbc->dbc_proc_name, DBC_PROCNAMELEN, "usb/%s-dbc",
+	    device_get_nameunit(self));
+	
+	pc = &dbc->dbc_pc;
+	pg = &dbc->dbc_pg;
+	pc->tag_parent = sc->sc_bus.dma_parent_tag;
+	err = usb_pc_alloc_mem(pc, pg, size, XHCI_PAGE_SIZE);
+#endif
+
 #ifdef notyet
 	/* TODO: Allocate DbC info context */
 	
@@ -774,7 +792,9 @@ xhci_dbc_detect(device_t self)
 	err = xhci_dbc_ic_alloc(&ctx->dbcic);
 #endif
 
+#ifdef notyet
 	/* TODO: Set up DbC endpoint contexts: ctx: ctx_in, ctx_out */
+#endif
 
 #ifdef notyet
 	/* Bang the registers to set VID/PID 	*/
@@ -785,10 +805,14 @@ xhci_dbc_detect(device_t self)
 #endif
 	
 #ifdef notyet	
-	/* TODO: Activation comes last. */
-	
 	/* TODO: Bang XHCI_DCCP to point to the DbCC. */
-	
+	/* NOTE: Easiest to bang lo/hi separately, or add our own XWRITE8()
+	 * which does this. bus_space_write_8() is not widespread. */
+	/* NOTE: Unsure if we have to swap this or not. */
+#endif
+
+#ifdef notyet	
+	/* TODO: Activation is the penultimate step. */
 	/* Write DCE enable for Dbc-Off->Dbc-Disconnected [Sec. 7.6.8.6] */
 	dcctrl = XREAD4(sc, dbc, XHCI_DCCTRL);
 	if (dcctrl == 0xFFFFFFFF)
@@ -799,9 +823,25 @@ xhci_dbc_detect(device_t self)
 	if (dcctrl == 0xFFFFFFFF)
 		return (USB_ERR_NO_PIPE); /* XXX not responding */
 	DPRINTF("DCCTRL=0x%x\n", dcctrl);
+#if 0 /* TODO: support port mapping. */
 	/* note: if port == 0, capability is not mapped to a port */
 	port = dcst >> 24;
 	device_printf(self, "Debug Capability on root port %d\n", port);
+#endif
+#endif
+
+#ifdef notyet
+	/*
+	 * NOTE: The final step is to fire up the thread.
+	 * NOTE: dbc_proc is independent of the bus processes
+	 * as it's associated with a controller -- NOT the bus.
+	 */
+	if (usb_proc_create(&dbc->dbc_proc, &dbc->dbc_mtx, 
+		&dbc->dbc_proc_name, USB_PRI_HIGH)) {
+		device_printf(dev, "WARNING: Creation of xHCI DbC I/O"
+			"process failed.\n");
+		goto out;
+	}
 #endif
 
 	return (0);
