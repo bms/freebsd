@@ -175,8 +175,7 @@ static void xhci_ctx_set_le64(struct xhci_softc *sc, volatile uint64_t *ptr, uin
 static uint64_t xhci_ctx_get_le64(struct xhci_softc *sc, volatile uint64_t *ptr);
 #endif
 #ifdef USB_DBGCAP
-static usb_error_t xhci_dbc_ic_alloc(struct xhci_dbc_ic *);
-static void xhci_dbc_ic_free(struct xhci_dbc_ic *);
+static void xhci_dbc_init_strings(struct xhci_dbc *);
 #ifdef USB_DEBUG
 static void xhci_dbc_ic_dump(struct xhci_dbc_ic *);
 #endif
@@ -724,6 +723,7 @@ xhci_dbc_detect(device_t self)
 {
 	struct xhci_softc *sc = device_get_softc(self);
 #ifdef notyet
+	struct usb_page_search	buf_res;
 	struct usb_page_cache	*pc;
 	struct usb_page		*pg;
 	struct xhci_dbc		*dbc;
@@ -774,26 +774,16 @@ xhci_dbc_detect(device_t self)
 	return (0);
 	
 #ifdef notyet
-	/* TODO: Set up DbC ERST ring. */
 	dbc = &sc->sc_hw.dbc;
 	snprintf(&dbc->dbc_proc_name, DBC_PROCNAMELEN, "usb/%s-dbc",
 	    device_get_nameunit(self));
 	
-	pc = &dbc->dbc_pc;
-	pg = &dbc->dbc_pg;
-	pc->tag_parent = sc->sc_bus.dma_parent_tag;
-	err = usb_pc_alloc_mem(pc, pg, size, XHCI_PAGE_SIZE);
+	/* TODO: Set up DbC ERST ring. */
+	/* XXX Can we re-use ? */
 #endif
 
 #ifdef notyet
-	/* TODO: Allocate DbC info context */
-	
-	/* TODO: Set up DbC info context */
-	err = xhci_dbc_ic_alloc(&ctx->dbcic);
-#endif
-
-#ifdef notyet
-	/* TODO: Set up DbC endpoint contexts: ctx: ctx_in, ctx_out */
+	/* TODO: Allocate DbC endpoint contexts: ctx_in, ctx_out. */
 #endif
 
 #ifdef notyet
@@ -804,16 +794,36 @@ xhci_dbc_detect(device_t self)
 	XWRITE4(sc, dbc, XHCI_DCDDI2, htole32(dcddi2));
 #endif
 	
-#ifdef notyet	
-	/* TODO: Bang XHCI_DCCP to point to the DbCC. */
-	/* NOTE: Easiest to bang lo/hi separately, or add our own XWRITE8()
-	 * which does this. bus_space_write_8() is not widespread. */
-	/* NOTE: Unsure if we have to swap this or not. */
+#ifdef notyet
+	/*
+	 * Set up root DbC context structure and space for strings.
+	 */
+	pc = &dbc->dbc_pc;
+	pc->tag_parent = sc->sc_bus.dma_parent_tag;
+	size = sizeof(struct xhci_dbc_ctx) +
+	    (DBCIC_MAX_DESCS * DBCIC_DESC_SIZE_MAX);
+	if (usb_pc_alloc_mem(pc, &dbc->dbc_pg, size, XHCI_PAGE_SIZE))
+		goto error;
+	
+	/* TODO: Fill out endpoints in DbC IC. */
+
+	/* Load config strings into reserved space after DbC context. */	
+	usbd_get_page(pc, sizeof(struct xhci_dbc_ctx), &buf_res);
+	xhci_dbc_init_strings(dbc, (uint8_t *)buf_res.buffer);
+
+	/* Load DbC context into DCCP register. */
+	usbd_get_page(pc, 0, &buf_res);
+	addr = buf_res.physaddr;
+	usb_pc_cpu_flush(pc);
+	DPRINTF("DCCP(0)=0x%016llx\n", (unsigned long long)addr);
+	XWRITE4(sc, dbc, XHCI_DCCP, (uint32_t)addr);
+	XWRITE4(sc, dbc, XHCI_DCCP+4, (uint32_t)(addr >> 32));
 #endif
 
 #ifdef notyet	
-	/* TODO: Activation is the penultimate step. */
-	/* Write DCE enable for Dbc-Off->Dbc-Disconnected [Sec. 7.6.8.6] */
+	/*
+	 * Activate DbC by writing DCE enable. [Sec. 7.6.8.6]
+	 */
 	dcctrl = XREAD4(sc, dbc, XHCI_DCCTRL);
 	if (dcctrl == 0xFFFFFFFF)
 		return (USB_ERR_NO_PIPE); /* XXX not responding */
@@ -847,66 +857,25 @@ xhci_dbc_detect(device_t self)
 	return (0);
 }
 
-/*
- * Allocate and map the xHCI DbC Info Context (dbcic).
- *  This is NOT the SAME as the whole DBC; here, we only
- *  set up the first part of the descriptor containing the strings.
- * NOTE: uintptr_t cast required for 32-bit hosts.
- * TODO: Change memory allocations to DMA coherent ones.
- * FUTURE: Make presented DbC context dynamically loadable to
- * support e.g. the GDB stub.
- */
-static usb_error_t
-xhci_dbc_ic_alloc(struct xhci_dbc_ic *pic)
-{
-	struct usb_string_lang *sp;
-	void *addr;
-	int i, len;
-
-	memset(pic, 0, sizeof(struct xhci_dbc_ic));
-
-	sp = (struct usb_string_lang *)&dbcic_descs[0];
-	for (i = 0; i < DBCIC_MAX_DESCS; i++, sp++) {
-		/* NOTE: bLength is the sizeof(struct). */
-		len = sp->bLength;
-		addr = malloc(len, M_USBHC, M_NOWAIT); /* XXX */
-		if (!addr)
-			break;
-		memcpy(addr, sp, len);
-		pic->aqwDesc[i] = htole64((uintptr_t)addr);
-		pic->abyStrlen[i] = len;
-	}
-	if (i == DBCIC_MAX_DESCS)
-		return (0);
-
-	/*
-	 * Back out of allocations.
-	 * XXX We don't need bLength for usb_free(), BUT
-	 * we MAY need it for busdma-style allocations.
-	 * TODO: Use host-side pointers; don't decode controller view.
-	 */
-	for (--i; i >= 0; --i) {
-		addr = (void *)(uintptr_t)le64toh(pic->aqwDesc[i]);
-		free(addr, M_USBHC);
-	}
-
-	return (USB_ERR_NOMEM);
-}
-
-/* TODO: Use host-side pointers; don't decode controller view. */
 static void
-xhci_dbc_ic_free(struct xhci_dbc_ic *pic)
+xhci_dbc_init_strings(struct xhci_dbc *dbc, uint8_t *buf)
 {
-	void *addr;
-	int i;
-
-	for (i = 0; i < DBCIC_MAX_DESCS; i++) {
-		addr = (void *)(uintptr_t)le64toh(pic->aqwDesc[i]);
-		free(addr, M_USBHC);
+	struct usb_string_lang	*ssp;
+	int				i, len;
+	
+	memset(buf, 0, DBCIC_MAX_DESCS * DBCIC_DESC_SIZE_MAX);
+	
+	ssp = (struct usb_string_lang *)&dbcic_descs[0];
+	for (i = 0; i < DBCIC_MAX_DESCS; i++, buf += DBCIC_DESC_SIZE_MAX) {
+		len = sp->bLength;			/* inclusive */
+		memcpy(buf, ssp, len);
+		pic->aqwDesc[i] = htole64((uintptr_t)buf);
+		pic->abyStrlen[i] = len;
 	}
 }
 
 #ifdef USB_DEBUG
+/* TODO: Dump the whole DBCIC, not just the strings. */
 static void
 xhci_dbc_ic_dump(struct xhci_dbc_ic *pic)
 {
