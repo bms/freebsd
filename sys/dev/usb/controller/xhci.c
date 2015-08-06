@@ -175,7 +175,8 @@ static void xhci_ctx_set_le64(struct xhci_softc *sc, volatile uint64_t *ptr, uin
 static uint64_t xhci_ctx_get_le64(struct xhci_softc *sc, volatile uint64_t *ptr);
 #endif
 #ifdef USB_DBGCAP
-static void xhci_dbc_init_strings(struct xhci_dbc *);
+static void xhci_dbc_init_strings(struct xhci_dbc *, struct xhci_dbc_ctx *,
+    uint64_t);
 #ifdef USB_DEBUG
 static void xhci_dbc_ic_dump(struct xhci_dbc_ic *);
 #endif
@@ -723,7 +724,8 @@ xhci_dbc_detect(device_t self)
 {
 	struct xhci_softc *sc = device_get_softc(self);
 #ifdef notyet
-	struct usb_page_search	buf_res;
+	struct xhci_dbc_ctx	*pdbcc;
+	struct usb_page_search	 buf_res;
 	struct usb_page_cache	*pc;
 	struct usb_page		*pg;
 	struct xhci_dbc		*dbc;
@@ -805,15 +807,16 @@ xhci_dbc_detect(device_t self)
 	if (usb_pc_alloc_mem(pc, &dbc->dbc_pg, size, XHCI_PAGE_SIZE))
 		goto error;
 	
-	/* TODO: Fill out endpoints in DbC IC. */
+	usbd_get_page(pc, 0, &buf_res);
+	pdbcc = (struct xhci_dbc_ctx *)buf_res.buffer;
+	addr = buf_res.physaddr;
 
 	/* Load config strings into reserved space after DbC context. */	
-	usbd_get_page(pc, sizeof(struct xhci_dbc_ctx), &buf_res);
-	xhci_dbc_init_strings(dbc, (uint8_t *)buf_res.buffer);
+	xhci_dbc_init_strings(dbc, pdbcc, addr);
+	
+	/* TODO: Fill out endpoints in DbC IC. */
 
 	/* Load DbC context into DCCP register. */
-	usbd_get_page(pc, 0, &buf_res);
-	addr = buf_res.physaddr;
 	usb_pc_cpu_flush(pc);
 	DPRINTF("DCCP(0)=0x%016llx\n", (unsigned long long)addr);
 	XWRITE4(sc, dbc, XHCI_DCCP, (uint32_t)addr);
@@ -858,19 +861,26 @@ xhci_dbc_detect(device_t self)
 }
 
 static void
-xhci_dbc_init_strings(struct xhci_dbc *dbc, uint8_t *buf)
+xhci_dbc_init_strings(struct xhci_dbc *dbc, struct xhci_dbc_ctx *pdbcc,
+    uint64_t addr)
 {
 	struct usb_string_lang	*ssp;
-	int				i, len;
+	uint8_t			*dsp;
+	int				 i, len;
 	
-	memset(buf, 0, DBCIC_MAX_DESCS * DBCIC_DESC_SIZE_MAX);
-	
+	/* Assume everything is in the same page. */	
+	dsp = (uint8_t *)(pdbcc + 1);
+	addr += sizeof(struct xhci_dbc_ctx);
+	memset(dsp, 0, DBCIC_MAX_DESCS * DBCIC_DESC_SIZE_MAX);
+
 	ssp = (struct usb_string_lang *)&dbcic_descs[0];
-	for (i = 0; i < DBCIC_MAX_DESCS; i++, buf += DBCIC_DESC_SIZE_MAX) {
-		len = sp->bLength;			/* inclusive */
-		memcpy(buf, ssp, len);
-		pic->aqwDesc[i] = htole64((uintptr_t)buf);
-		pic->abyStrlen[i] = len;
+	for (i = 0; i < DBCIC_MAX_DESCS; i++) {
+		len = ssp->bLength;			/* inclusive */
+		memcpy(dsp, ssp, len);
+		pdbcc->dbcic.aqwDesc[i] = htole64(addr);
+		pdbcc->dbcic.abyStrlen[i] = len;
+		dsp += DBCIC_DESC_SIZE_MAX;
+		addr += DBCIC_DESC_SIZE_MAX;
 	}
 }
 
