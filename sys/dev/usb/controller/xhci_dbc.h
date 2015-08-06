@@ -46,7 +46,7 @@ enum xhci_dbcic_desc {
 
 struct xhci_dbc_ic {
 	uint64_t	 aqwDesc[DBCIC_MAX_DESCS];
-	uint8_t		 abyStrlen[DBCIC_MAX_DESCS];
+	uint8_t	 abyStrlen[DBCIC_MAX_DESCS];
 	uint32_t	 dwReserved[7];
 } __packed;
 
@@ -57,9 +57,26 @@ struct xhci_dbc_ctx {
 } __packed;
 
 /*
- * Host-side structures.
+ * Kernel-visible structures.
  */
 
-/* XXX TODO */
+/* 'usb/' + 'xhci' + 'NNNNNN' + '-dbc' + '\0' + 2*pad := 80 bytes */
+#define DBC_PROCNAMELEN (4 + SPECNAMELEN + 6 + 4 + 1 + 2)
+
+/* XXX name */
+/* XXX watch for cache line effects */
+struct xhci_dbc {
+	struct usb_page_cache	 dbc_pc;
+	struct usb_page_cache	 dbc_pg;
+	
+	struct usb_process		 dbc_proc;
+	struct mtx			 dbc_mtx;
+	
+	char				 dbc_procname[DBC_PROCNAMELEN];
+};
+
+/*
+ * There are no user-visible structures.
+ */
 
 #endif /* _XHCI_DBC_H_ */
