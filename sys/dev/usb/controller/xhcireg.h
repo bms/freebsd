@@ -193,6 +193,7 @@
  * See also: Sec. 7.6.8 of Intel xHCI specification v1.1.
  */
 #define	XHCI_DCID	0x00	/* Capability ID */
+#define	 XHCI_DCID_ERST_MAX(x)	(((x) >> 16) & 0xF)
 #define	XHCI_DCDB	0x04	/* Doorbell */
 #define	XHCI_DCERSTSZ	0x08	/* Event Ring Segment Table Size */
 #define	XHCI_DCERSTBA	0x10	/* Event Ring Base Address */
