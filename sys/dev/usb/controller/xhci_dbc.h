@@ -45,12 +45,24 @@ enum xhci_dbcic_desc {
  * Controller-visible structures.
  */
 
+/*
+ * Event ring. TRB slots are allocated in the same page, as existing code.
+ * Alias for xhci_hw_root{} in xhci.h to avoid confusion.
+ */
+typedef struct xhci_hw_root xhci_dbc_erst_t;
+
+/*
+ * DbC IC string descriptor table.
+ */
 struct xhci_dbc_ic {
 	uint64_t	 aqwDesc[DBCIC_MAX_DESCS];
 	uint8_t	 abyStrlen[DBCIC_MAX_DESCS];
 	uint32_t	 dwReserved[7];
 } __packed;
 
+/*
+ * DbC Information Context (IC).
+ */
 struct xhci_dbc_ctx {
 	struct xhci_dbc_ic		 dbcic;	/* Info context; 'personality' */
 	struct xhci_endp_ctx	 ctx_out; 	/* [Sec. 6.2.3] */
@@ -66,15 +78,25 @@ struct xhci_dbc_ctx {
 /* 'usb/' + 'xhci' + 'NNNNNN' + '-dbc' + '\0' + 2*pad := 80 bytes */
 #define DBC_PROCNAMELEN (4 + SPECNAMELEN + 6 + 4 + 1 + 2)
 
-/* XXX name */
-/* XXX watch for cache line effects */
 struct xhci_dbc {
-	struct usb_page_cache	 dbc_pc;
-	struct usb_page_cache	 dbc_pg;
+	struct usb_page_cache	 dbc_ctx_pc;
+	struct usb_page_cache	 dbc_erst_pc;
+	
+	struct usb_page		 dbc_ctx_pg;
+	struct usb_page		 dbc_erst_pg;
 	
 	struct usb_process		 dbc_proc;
 	struct mtx			 dbc_mtx;
 	
+	/* chip specific */
+	uint16_t			 dbc_erst_max;
+#if 0
+	uint16_t			 sc_event_idx;
+	uint16_t			 sc_command_idx;
+	uint16_t			 sc_imod_default;
+#endif
+
+	/* process handling */
 	char				 dbc_procname[DBC_PROCNAMELEN];
 };
 
