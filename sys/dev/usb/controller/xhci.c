@@ -722,7 +722,10 @@ xhci_uninit(struct xhci_softc *sc)
 int
 xhci_dbc_detect(device_t self)
 {
-	struct xhci_softc *sc = device_get_softc(self);
+	struct xhci_softc		*sc = device_get_softc(self);
+	uint32_t			 temp;
+	uint32_t			 eecp;
+	uint32_t			 noff;
 #ifdef notyet
 	struct xhci_dbc_ctx	*pdbcc;
 	struct usb_page_search	 buf_res;
@@ -731,45 +734,30 @@ xhci_dbc_detect(device_t self)
 	struct xhci_dbc		*dbc;
 	int				 err;
 #endif
-	uint32_t cparams;
-#ifdef notyet
-	uint32_t dcctrl;
-#endif
-#ifdef notyet
-	uint32_t dcddi1;
-	uint32_t dcddi2;
-#endif
-	uint32_t dcst;
-	uint32_t eecp;
-	uint32_t eec;
-	uint32_t noff;
-#ifdef notyet
-	uint8_t  port;
-#endif
 
 	sc->sc_dbc_off = noff = -1;
-	cparams = XREAD4(sc, capa, XHCI_HCSPARAMS0);
-	eecp = XHCI_HCS0_XECP(cparams) << 2;
+	temp = XREAD4(sc, capa, XHCI_HCSPARAMS0);
+	eecp = XHCI_HCS0_XECP(temp) << 2;
 	while (eecp != 0) {
-		eec = XREAD4(sc, capa, eecp);
-		if (XHCI_XECP_ID(eec) == XHCI_ID_DBC) {
+		temp = XREAD4(sc, capa, eecp);
+		if (XHCI_XECP_ID(temp) == XHCI_ID_DBC) {
 			sc->sc_dbc_off = eecp;
 			break;
 		}
-		noff = XHCI_XECP_NEXT(eec) << 2;
+		noff = XHCI_XECP_NEXT(temp) << 2;
 		if (noff == 0)
 			break;
 		eecp += noff;
 	}
 
-	DPRINTF("DBCOFF=0x%x\n", sc->sc_dbc_off);
+	DPRINTF("DBCOFF=0x08%x\n", sc->sc_dbc_off);
 	if (!xhcidbgcap || sc->sc_dbc_off == -1)
 		return (0);
 
 	/* Probe status register to see if DbC capability exists (and mapped) */
-	dcst = XREAD4(sc, dbc, XHCI_DCST);
-	DPRINTF("DCST=0x%x\n", dcst);
-	if (dcst == -1)
+	temp = XREAD4(sc, dbc, XHCI_DCST);
+	DPRINTF("DCST=0x08%x\n", temp);
+	if (temp == 0xFFFFFFFFU)
 		return (USB_ERR_NO_PIPE); /* not responding */
 		
 	device_printf(self, "Debug Capability detected\n");
@@ -779,9 +767,49 @@ xhci_dbc_detect(device_t self)
 	dbc = &sc->sc_hw.dbc;
 	snprintf(&dbc->dbc_proc_name, DBC_PROCNAMELEN, "usb/%s-dbc",
 	    device_get_nameunit(self));
+#endif
+
+#ifdef notyet
+	pc = &dbc->dbc_erst_pc;
+	pc->tag_parent = sc->sc_bus.dma_parent_tag;
+	if (usb_pc_alloc_mem(pc, &dbc->dbc_pg, sizeof(xhci_dbc_erst_t),
+	    XHCI_PAGE_SIZE))
+		goto error;
+		
+	/*
+	 * DbC ERST is subtly different from the main ERST,
+	 * and is not part of the DbC info context.
+	 */
+	temp = XREAD4(sc, dbc, XHCI_DCID);
+	DPRINTF("DCID=0x08%x\n", temp);
+	temp = XHCI_DCID_ERST_MAX(temp);
+	temp = 1U << temp;
+	if (temp > XHCI_MAX_RSEG)
+		temp = XHCI_MAX_RSEG;
+	dbc->dbc_erst_max = temp;
+
+	DPRINTF("DCERSTSZ=0x%08x -> 0x%08x\n",
+	    XREAD4(sc, dbc, XHCI_DCERSTSZ, temp));
+	XWRITE4(sc, dbc, XHCI_DCERSTSZ, XHCI_ERSTS_SET(temp));
 	
-	/* TODO: Set up DbC ERST ring. */
-	/* XXX Can we re-use ? */
+	usbd_get_page(pc, 0, &buf_res);
+	perst = (xhci_dbc_erst_t *)buf_res.buffer;
+	addr = buf_res.physaddr;
+	addr += (uintptr_t)offsetof(xhci_dbc_erst_t, hwr_events[0]);
+
+	memset(perst, 0, sizeof(xhci_dbc_erst_t));
+	perst->hwr_ring_seg[0].qwEvrsTablePtr = htole64(addr);
+	perst->hwr_ring_seg[0].dwEvrsTableSize = htole32(XHCI_MAX_EVENTS);
+
+	DPRINTF("DCERDP=0x%016llx\n", (unsigned long long)addr);
+	XWRITE4(sc, dbc, XHCI_DCERDP, (uint32_t)addr);
+	XWRITE4(sc, dbc, XHCI_DCERDP+4, (uint32_t)(addr >> 32));
+
+	addr = buf_res.physaddr;
+	DPRINTF("DCERSTBA(0)=0x%016llx\n", (unsigned long long)addr);
+	XWRITE4(sc, runt, XHCI_DCERSTBA, (uint32_t)addr);
+	XWRITE4(sc, runt, XHCI_DCERSTBA+4, (uint32_t)(addr >> 32));
+	usb_pc_cpu_flush(pc);
 #endif
 
 #ifdef notyet
@@ -790,17 +818,19 @@ xhci_dbc_detect(device_t self)
 
 #ifdef notyet
 	/* Bang the registers to set VID/PID 	*/
-	dcddi1 = (USB_VENDOR_FREEBSD << 16) | XHCI_DBC_PROTO_VENDOR;
-	XWRITE4(sc, dbc, XHCI_DCDDI1, htole32(dcddi1));
-	dcddi2 = (USB_PRODUCT_FREEBSD_XHCI_DBC << 16) | DBC_RAW_REV_1;
-	XWRITE4(sc, dbc, XHCI_DCDDI2, htole32(dcddi2));
+	temp = (USB_VENDOR_FREEBSD << 16) | XHCI_DBC_PROTO_VENDOR;
+	DPRINTF("DCDDI1=0x08%x\n", temp);
+	XWRITE4(sc, dbc, XHCI_DCDDI1, htole32(temp));
+	temp = (USB_PRODUCT_FREEBSD_XHCI_DBC << 16) | DBC_RAW_REV_1;
+	DPRINTF("DCDDI2=0x08%x\n", temp);
+	XWRITE4(sc, dbc, XHCI_DCDDI2, htole32(temp));
 #endif
 	
 #ifdef notyet
 	/*
-	 * Set up root DbC context structure and space for strings.
+	 * Set up DbC context and space for strings.
 	 */
-	pc = &dbc->dbc_pc;
+	pc = &dbc->dbc_ctx_pc;
 	pc->tag_parent = sc->sc_bus.dma_parent_tag;
 	size = sizeof(struct xhci_dbc_ctx) +
 	    (DBCIC_MAX_DESCS * DBCIC_DESC_SIZE_MAX);
@@ -818,24 +848,24 @@ xhci_dbc_detect(device_t self)
 
 	/* Load DbC context into DCCP register. */
 	usb_pc_cpu_flush(pc);
-	DPRINTF("DCCP(0)=0x%016llx\n", (unsigned long long)addr);
+	DPRINTF("DCCP=0x%016llx\n", (unsigned long long)addr);
 	XWRITE4(sc, dbc, XHCI_DCCP, (uint32_t)addr);
 	XWRITE4(sc, dbc, XHCI_DCCP+4, (uint32_t)(addr >> 32));
 #endif
 
-#ifdef notyet	
+#ifdef notyet
 	/*
 	 * Activate DbC by writing DCE enable. [Sec. 7.6.8.6]
 	 */
-	dcctrl = XREAD4(sc, dbc, XHCI_DCCTRL);
-	if (dcctrl == 0xFFFFFFFF)
+	temp = XREAD4(sc, dbc, XHCI_DCCTRL);
+	if (temp == 0xFFFFFFFF)
 		return (USB_ERR_NO_PIPE); /* XXX not responding */
-	dcctrl |= XHCI_DCCTRL_DCE;
-	XWRITE4(sc, dbc, XHCI_DCCTRL, dcctrl);
-	dcctrl = XREAD4(sc, dbc, XHCI_DCCTRL);
-	if (dcctrl == 0xFFFFFFFF)
+	temp |= XHCI_DCCTRL_DCE;
+	DPRINTF("DCCTRL=0x08%x\n", temp);
+	XWRITE4(sc, dbc, XHCI_DCCTRL, temp);
+	temp = XREAD4(sc, dbc, XHCI_DCCTRL);
+	if (temp == 0xFFFFFFFF)
 		return (USB_ERR_NO_PIPE); /* XXX not responding */
-	DPRINTF("DCCTRL=0x%x\n", dcctrl);
 #if 0 /* TODO: support port mapping. */
 	/* note: if port == 0, capability is not mapped to a port */
 	port = dcst >> 24;
@@ -855,6 +885,26 @@ xhci_dbc_detect(device_t self)
 			"process failed.\n");
 		goto out;
 	}
+
+	/*
+	 * TODO: Either set up what we can upfront for the helper thread here,
+	 * or coin a separate USB proc message type to deal with it.
+	 * The Synopsys code for Linux can't translate 1:1 here.
+	 * 
+	 * The way the usb helper proc/thread works is that
+	 * you have to feed it messages asynchronously (probably using a small
+	 * helper function which bangs the usb proc pm TAILQ).
+	 * See also: ucom_cfg_open(), ufoma_cfg_open() for callback examples.
+	 * It is useful because we can do things from USB in a separate
+	 * thread context, rather than the rest of the kernel or in
+	 * a user process context which has entered the kernel.
+	 */
+#endif
+
+#if 0	/* XXX move to detach routine */
+	if (usb_proc_is_gone(&dbc->dbc_proc)) { /* do nothing */ }
+	usb_proc_drain(&dbc->dbc_proc);
+	usb_proc_free(&dbc->dbc_proc);
 #endif
 
 	return (0);
