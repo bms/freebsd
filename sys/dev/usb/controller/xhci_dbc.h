@@ -72,6 +72,8 @@ struct xhci_dbc_ctx {
 	uint32_t			 reserved01[8];
 } __packed;
 
+#define DBC_ENDP_MAXP_SIZE	1024		/* Fixed packet size for DbC EPs */
+
 /*
 dbcic -> dbc_ic
 ctx_in,out -> dbx_endps
@@ -93,9 +95,11 @@ DBC_CTX_IN
 struct xhci_dbc {
 	struct usb_page_cache	 dbc_ctx_pc;
 	struct usb_page_cache	 dbc_erst_pc;
-	
+	struct usb_page_cache	 dbc_in_pc;
+
 	struct usb_page		 dbc_ctx_pg;
 	struct usb_page		 dbc_erst_pg;
+	struct usb_page		 dbc_in_pg;
 	
 	struct usb_process		 dbc_proc;
 	struct mtx			 dbc_mtx;
