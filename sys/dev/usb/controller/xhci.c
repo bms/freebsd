@@ -175,6 +175,9 @@ static void xhci_ctx_set_le64(struct xhci_softc *sc, volatile uint64_t *ptr, uin
 static uint64_t xhci_ctx_get_le64(struct xhci_softc *sc, volatile uint64_t *ptr);
 #endif
 #ifdef USB_DBGCAP
+static usb_error_t xhci_dbc_ep_alloc(struct xhci_dbc *,
+    struct usb_dma_parent_tag *);
+static usb_error_t xhci_dbc_ep_config(struct xhci_dbc *, int);
 static void xhci_dbc_init_strings(struct xhci_dbc *, struct xhci_dbc_ctx *,
     uint64_t);
 #ifdef USB_DEBUG
@@ -934,12 +937,6 @@ xhci_dbc_init_strings(struct xhci_dbc *dbc, struct xhci_dbc_ctx *pdbcc,
 		addr += DBCIC_DESC_SIZE_MAX;
 	}
 }
-
-
-static usb_error_t xhci_dbc_ep_alloc(struct xhci_dbc *,
-    struct usb_dma_parent_tag *);
-static usb_error_t xhci_dbc_ep_config(struct xhci_dbc *, int);
-
 
 /*
  * TODO: Initialize and allocate transfer rings.
