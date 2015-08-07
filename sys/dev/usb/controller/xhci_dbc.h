@@ -62,6 +62,7 @@ struct xhci_dbc_ic {
 
 /*
  * DbC Information Context (IC).
+ *  XXX Need to track pages for each endpoint context somewhere else.
  */
 struct xhci_dbc_ctx {
 	struct xhci_dbc_ic		 dbcic;	/* Info context; 'personality' */
@@ -70,6 +71,17 @@ struct xhci_dbc_ctx {
 	struct xhci_endp_ctx	 ctx_in;
 	uint32_t			 reserved01[8];
 } __packed;
+
+/*
+dbcic -> dbc_ic
+ctx_in,out -> dbx_endps
+struct {
+} dbc_endps[DBC_ENDP_MAX];
+DBC_ENDP_OUT
+DBC_ENDP_IN
+DBC_CTX_OUT
+DBC_CTX_IN
+*/
 
 /*
  * Kernel-visible structures.

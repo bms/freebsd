@@ -814,6 +814,7 @@ xhci_dbc_detect(device_t self)
 
 #ifdef notyet
 	/* TODO: Allocate DbC endpoint contexts: ctx_in, ctx_out. */
+	err = xhci_dbc_ep_alloc(dbc, sc->sc_bus.dma_parent_tag);
 #endif
 
 #ifdef notyet
@@ -932,6 +933,96 @@ xhci_dbc_init_strings(struct xhci_dbc *dbc, struct xhci_dbc_ctx *pdbcc,
 		dsp += DBCIC_DESC_SIZE_MAX;
 		addr += DBCIC_DESC_SIZE_MAX;
 	}
+}
+
+
+static usb_error_t xhci_dbc_ep_alloc(struct xhci_dbc *,
+    struct usb_dma_parent_tag *);
+static usb_error_t xhci_dbc_ep_config(struct xhci_dbc *, int);
+
+
+/*
+ * TODO: Initialize and allocate transfer rings.
+ * Need: input_pc. There is no "output pc".
+ */
+static usb_error_t
+xhci_dbc_ep_alloc(struct xhci_dbc *dbc, struct usb_dma_parent_tag *dmat)
+{
+	struct usb_page_cache	*pc;
+	struct usb_page		*pg;
+
+	/* need to initialize the page cache */
+	pc = &dbc->dbc_in_pc;
+	pc->tag_parent = dmat;
+	pg = &dbc->dbc_in_pg;
+	if (usb_pc_alloc_mem(pc, pg, sc->sc_ctx_is_64_byte ?
+	    (2 * sizeof(struct xhci_input_dev_ctx)) :
+	    sizeof(struct xhci_input_dev_ctx), XHCI_PAGE_SIZE)) {
+		return (USB_ERR_NOMEM);
+	}
+
+	return (0);
+}
+
+/*
+ * Configure DbC endpoint contexts. [Sec. 7.6.3.2]
+ * XXX I'll have to come back to this.
+ *
+ * We have the following extra conditions:
+ *  1. wMaxPacketSize is fixed at 1024.
+ *  2. "Three strikes" rule applies [Sec. 4.3.3]
+ *  3. Endpoints are always BULK.
+ */
+static usb_error_t
+xhci_dbc_ep_config(struct xhci_dbc *dbc, int dir_in)
+{
+	struct usb_page_search buf_inp;
+	uint64_t ring_addr = pepext->physaddr;
+	uint32_t temp;
+
+	/* XXX Get page from the correct page cache */
+	//usbd_get_page(&sc->sc_hw.devs[index].input_pc, 0, &buf_inp);
+	//pinp = buf_inp.buffer;
+
+	/* XXX Do we need to set this at all? */
+	if (max_packet_count == 0)
+		return (USB_ERR_BAD_BUFSIZE);
+	max_packet_count--;
+
+	/* XXX Flush the right cache */
+	usb_pc_cpu_flush(pepext->page_cache);
+
+	temp = XHCI_EPCTX_0_EPSTATE_SET(0) |
+		XHCI_EPCTX_0_MAXP_STREAMS_SET(0) |
+		XHCI_EPCTX_0_LSA_SET(0);
+	ring_addr |= XHCI_EPCTX_2_DCS_SET(1);
+	xhci_ctx_set_le32(sc, &pinp->ctx_ep[epno - 1].dwEpCtx0, temp);
+
+	temp =
+	    XHCI_EPCTX_1_HID_SET(0) |
+	    XHCI_EPCTX_1_MAXB_SET(max_packet_count) |
+	    XHCI_EPCTX_1_MAXP_SIZE_SET(max_packet_size);
+
+	temp |= XHCI_EPCTX_1_CERR_SET(3);
+
+	/* Bulk only */
+	temp |= XHCI_EPCTX_1_EPTYPE_SET(2);
+	temp |= XHCI_EPCTX_1_EPTYPE_SET((dir_in ? 6 : 2));
+
+	xhci_ctx_set_le32(sc, &pinp->ctx_ep[epno - 1].dwEpCtx1, temp);
+	xhci_ctx_set_le64(sc, &pinp->ctx_ep[epno - 1].qwEpCtx2, ring_addr);
+
+	temp = XHCI_EPCTX_4_AVG_TRB_LEN_SET(XHCI_PAGE_SIZE);
+
+	xhci_ctx_set_le32(sc, &pinp->ctx_ep[epno - 1].dwEpCtx4, temp);
+
+#ifdef USB_DEBUG
+	xhci_dump_endpoint(sc, XXX);
+#endif
+	// FIXME need flush
+	//usb_pc_cpu_flush(&sc->sc_hw.devs[index].input_pc);
+
+	return (0);		/* success */
 }
 
 #ifdef USB_DEBUG
