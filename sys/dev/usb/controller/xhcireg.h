@@ -195,13 +195,36 @@
 #define	XHCI_DCID	0x00	/* Capability ID */
 #define	 XHCI_DCID_ERST_MAX(x)	(((x) >> 16) & 0xF)
 #define	XHCI_DCDB	0x04	/* Doorbell */
+#define	 XHCI_DCDB_TARGET_SET(x)	(((x) & 0x01) << 8)
+#define	 DCDB_TARGET_OUT	0
+#define	 DCDB_TARGET_IN	1
 #define	XHCI_DCERSTSZ	0x08	/* Event Ring Segment Table Size */
 #define	XHCI_DCERSTBA	0x10	/* Event Ring Base Address */
 #define	XHCI_DCERDP	0x18	/* Event Ring Dequeue Pointer */
+#define	 XHCI_DCERDP_SINDEX(x) XHCI_ERDP_LO_SINDEX(x)
 #define	XHCI_DCCTRL	0x20	/* DbC Control Register */
+#define	 XHCI_DCCTRL_DCR	0x00000001	/* DbC Run (RO) */
+#define	 XHCI_DCCTRL_LSE	0x00000002	/* Link Status Event Enable */
+#define	 XHCI_DCCTRL_HOT	0x00000004	/* Halt OUT TR */
+#define	 XHCI_DCCTRL_HIT	0x00000008	/* Halt IN TR */
+#define	 XHCI_DCCTRL_DRC	0x00000010	/* DbC Run Change */
+#define	 XHCI_DCCTRL_BST_MAX(x)	(((x) >> 16) & 0xFF)	/* Burst size */
+#define	 XHCI_DCCTRL_ADDR_GET(x)	(((x) >> 24) & 0x7F)	/* USB address */
 #define	 XHCI_DCCTRL_DCE	0x80000000
 #define	XHCI_DCST	0x24	/* DbC Status Register */
+#define	 XHCI_DCST_ER	0x00000001	/* Event Ring not empty (RO) */
+#define	 XHCI_DCST_SBR	0x00000002	/* System Bus will Reset (RO) */
+#define	 XHCI_DCST_DPORT(x)	(((x) >> 24) & 0xFF)
 #define	XHCI_DCPORTSC	0x28	/* DbC Port Status/Control Register */
+#define	 XHCI_DCPORTSC_CCS	0x00000001	/* Current Connect Status (RO) */
+#define	 XHCI_DCPORTSC_PED	0x00000002	/* Port Enable/Disable */
+#define	 XHCI_DCPORTSC_PR	0x00000010	/* Port in Reset (RO) */
+#define	 XHCI_DCPORTSC_PLS(x)	((x) >> 5) & 0x0F) /* Port Link Status */
+#define	 XHCI_DCPORTSC_SPEED(x)	((x) >> 13) & 0x0F) /* Port Speed */
+#define	 XHCI_DCPORTSC_CSC	0x00020000	/* Connect Status Change */
+#define	 XHCI_DCPORTSC_PRC	0x00200000	/* Port Reset Change */
+#define	 XHCI_DCPORTSC_PLC	0x00400000	/* Port Link Status Change */
+#define	 XHCI_DCPORTSC_CEC	0x00800000	/* Port Config Error Change */
 #define	XHCI_DCCP	0x30	/* DbC Context Pointer */
 #define	XHCI_DCDDI1	0x38	/* DbC Device Descriptor Info 1 */
 #define	 XHCI_DBC_PROTO_VENDOR	0	/* Vendor-specific protocol */
