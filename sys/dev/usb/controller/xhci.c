@@ -177,11 +177,11 @@ static uint64_t xhci_ctx_get_le64(struct xhci_softc *sc, volatile uint64_t *ptr)
 #ifdef USB_DBGCAP
 static usb_error_t xhci_dbc_ep_alloc(struct xhci_dbc *,
     struct usb_dma_parent_tag *);
-static usb_error_t xhci_dbc_ep_config(struct xhci_dbc *, int);
-static void xhci_dbc_init_strings(struct xhci_dbc *, struct xhci_dbc_ctx *,
+static usb_error_t xhci_dbc_ep_config(struct xhci_softc *sc, struct xhci_dbc *, int);
+static void xhci_dbc_init_strings(struct xhci_dbc *, struct xhci_hw_dbcc *,
     uint64_t);
 #ifdef USB_DEBUG
-static void xhci_dbc_ic_dump(struct xhci_dbc_ic *);
+static void xhci_dbcc_dump(struct xhci_softc *, struct xhci_hw_dbcc *);
 #endif
 #endif
 
@@ -730,7 +730,7 @@ xhci_dbc_detect(device_t self)
 	uint32_t			 eecp;
 	uint32_t			 noff;
 #ifdef notyet
-	struct xhci_dbc_ctx	*pdbcc;
+	struct xhci_hw_dbcc	*pdbcc;
 	struct usb_page_search	 buf_res;
 	struct usb_page_cache	*pc;
 	struct usb_page		*pg;
@@ -753,8 +753,9 @@ xhci_dbc_detect(device_t self)
 		eecp += noff;
 	}
 
+	/* We depend on 64-byte context support here. */
 	DPRINTF("DBCOFF=0x08%x\n", sc->sc_dbc_off);
-	if (!xhcidbgcap || sc->sc_dbc_off == -1)
+	if (!xhcidbgcap || sc->sc_dbc_off == -1 || !sc->sc_ctx_is_64_byte) 
 		return (0);
 
 	/* Probe status register to see if DbC capability exists (and mapped) */
@@ -764,12 +765,20 @@ xhci_dbc_detect(device_t self)
 		return (USB_ERR_NO_PIPE); /* not responding */
 		
 	device_printf(self, "Debug Capability detected\n");
+
 	return (0);
 	
 #ifdef notyet
 	dbc = &sc->sc_hw.dbc;
 	snprintf(&dbc->dbc_proc_name, DBC_PROCNAMELEN, "usb/%s-dbc",
 	    device_get_nameunit(self));
+#endif
+	
+#ifdef notyet
+	/* Probe DCCTRL for supported DbC burst size */
+	temp = XREAD4(sc, dbc, XHCI_DCCTRL);
+	DPRINTF("DCCTRL=0x08%x\n", temp);
+	dbc->dbc_bst_max = XHCI_DCCTRL_BST_MAX(temp);
 #endif
 
 #ifdef notyet
@@ -778,7 +787,7 @@ xhci_dbc_detect(device_t self)
 	if (usb_pc_alloc_mem(pc, &dbc->dbc_pg, sizeof(xhci_dbc_erst_t),
 	    XHCI_PAGE_SIZE))
 		goto error;
-		
+
 	/*
 	 * DbC ERST is subtly different from the main ERST,
 	 * and is not part of the DbC info context.
@@ -818,6 +827,8 @@ xhci_dbc_detect(device_t self)
 #ifdef notyet
 	/* TODO: Allocate DbC endpoint contexts: ctx_in, ctx_out. */
 	err = xhci_dbc_ep_alloc(dbc, sc->sc_bus.dma_parent_tag);
+	/* TODO: Consolidate dma allocations into one function
+	 * just like usb_bus_mem_alloc_all(). */
 #endif
 
 #ifdef notyet
@@ -832,23 +843,29 @@ xhci_dbc_detect(device_t self)
 	
 #ifdef notyet
 	/*
-	 * Set up DbC context and space for strings.
+	 * Set up DbC context.
+	 *  Includes space for strings and endpoint contexts.
 	 */
 	pc = &dbc->dbc_ctx_pc;
 	pc->tag_parent = sc->sc_bus.dma_parent_tag;
-	size = sizeof(struct xhci_dbc_ctx) +
+	size = sizeof(struct xhci_hw_dbcc) +
 	    (DBCIC_MAX_DESCS * DBCIC_DESC_SIZE_MAX);
-	if (usb_pc_alloc_mem(pc, &dbc->dbc_pg, size, XHCI_PAGE_SIZE))
+	if (usb_pc_alloc_mem(pc, &dbc->dbc_ctx_pg, size, XHCI_PAGE_SIZE))
 		goto error;
 	
 	usbd_get_page(pc, 0, &buf_res);
-	pdbcc = (struct xhci_dbc_ctx *)buf_res.buffer;
+	pdbcc = (struct xhci_hw_dbcc *)buf_res.buffer;
 	addr = buf_res.physaddr;
 
 	/* Load config strings into reserved space after DbC context. */	
 	xhci_dbc_init_strings(dbc, pdbcc, addr);
 	
-	/* TODO: Fill out endpoints in DbC IC. */
+	/* Configure endpoints in DbCC. */
+	for (i = 0; i < DBC_EP_MAX; i++) {
+		if (xhci_dbc_ep_config(sc, dbc, i))
+			break;
+	}
+	/* XXX need to check allocations */
 
 	/* Load DbC context into DCCP register. */
 	usb_pc_cpu_flush(pc);
@@ -862,18 +879,17 @@ xhci_dbc_detect(device_t self)
 	 * Activate DbC by writing DCE enable. [Sec. 7.6.8.6]
 	 */
 	temp = XREAD4(sc, dbc, XHCI_DCCTRL);
-	if (temp == 0xFFFFFFFF)
-		return (USB_ERR_NO_PIPE); /* XXX not responding */
 	temp |= XHCI_DCCTRL_DCE;
 	DPRINTF("DCCTRL=0x08%x\n", temp);
 	XWRITE4(sc, dbc, XHCI_DCCTRL, temp);
 	temp = XREAD4(sc, dbc, XHCI_DCCTRL);
-	if (temp == 0xFFFFFFFF)
-		return (USB_ERR_NO_PIPE); /* XXX not responding */
+	if (temp == 0xFFFFFFFFU)
+		return (USB_ERR_NO_PIPE);
 #if 0 /* TODO: support port mapping. */
+	temp = XREAD4(sc, dbc, XHCI_DCST);
+	device_printf(self, "Debug Capability on root port %d\n"	,
+	    XHCI_DCST_DPORT(temp));
 	/* note: if port == 0, capability is not mapped to a port */
-	port = dcst >> 24;
-	device_printf(self, "Debug Capability on root port %d\n", port);
 #endif
 #endif
 
@@ -914,8 +930,24 @@ xhci_dbc_detect(device_t self)
 	return (0);
 }
 
+/* XXX All busmem allocations to go here. */
+static usb_error_t
+xhci_dbc_bus_mem_alloc_all(void)
+{
+
+	return (0);
+}
+
+/* XXX All busmem safe free's to go here. */
+static usb_error_t
+xhci_dbc_bus_mem_free_all(void)
+{
+
+	return (0);
+}
+
 static void
-xhci_dbc_init_strings(struct xhci_dbc *dbc, struct xhci_dbc_ctx *pdbcc,
+xhci_dbc_init_strings(struct xhci_dbc *dbc, struct xhci_hw_dbcc *pdbcc,
     uint64_t addr)
 {
 	struct usb_string_lang	*ssp;
@@ -924,24 +956,20 @@ xhci_dbc_init_strings(struct xhci_dbc *dbc, struct xhci_dbc_ctx *pdbcc,
 	
 	/* Assume everything is in the same page. */	
 	dsp = (uint8_t *)(pdbcc + 1);
-	addr += sizeof(struct xhci_dbc_ctx);
+	addr += sizeof(struct xhci_hw_dbcc);
 	memset(dsp, 0, DBCIC_MAX_DESCS * DBCIC_DESC_SIZE_MAX);
 
 	ssp = (struct usb_string_lang *)&dbcic_descs[0];
 	for (i = 0; i < DBCIC_MAX_DESCS; i++) {
 		len = ssp->bLength;			/* inclusive */
 		memcpy(dsp, ssp, len);
-		pdbcc->dbcic.aqwDesc[i] = htole64(addr);
-		pdbcc->dbcic.abyStrlen[i] = len;
+		pdbcc->dbcc_ic.aqwDesc[i] = htole64(addr);
+		pdbcc->dbcc_ic.abyStrlen[i] = len;
 		dsp += DBCIC_DESC_SIZE_MAX;
 		addr += DBCIC_DESC_SIZE_MAX;
 	}
 }
 
-/*
- * TODO: Initialize and allocate transfer rings.
- * Need: input_pc. There is no "output pc".
- */
 static usb_error_t
 xhci_dbc_ep_alloc(struct xhci_dbc *dbc, struct usb_dma_parent_tag *dmat)
 {
@@ -949,12 +977,14 @@ xhci_dbc_ep_alloc(struct xhci_dbc *dbc, struct usb_dma_parent_tag *dmat)
 	struct usb_page		*pg;
 
 	/* need to initialize the page cache */
-	pc = &dbc->dbc_in_pc;
+	/* XXX merge this into other function */
+	pc = &dbc->dbc_ring_pcs[0];
 	pc->tag_parent = dmat;
-	pg = &dbc->dbc_in_pg;
-	if (usb_pc_alloc_mem(pc, pg, sc->sc_ctx_is_64_byte ?
-	    (2 * sizeof(struct xhci_input_dev_ctx)) :
-	    sizeof(struct xhci_input_dev_ctx), XHCI_PAGE_SIZE)) {
+	pg = &dbc->dbc_ring_pgs[0];
+	
+	/* Endpoint context must be 64 bytes */	
+	if (usb_pc_alloc_mem(pc, pg, (2 * sizeof(struct xhci_input_dev_ctx)),
+	    XHCI_PAGE_SIZE)) {
 		return (USB_ERR_NOMEM);
 	}
 
@@ -962,88 +992,84 @@ xhci_dbc_ep_alloc(struct xhci_dbc *dbc, struct usb_dma_parent_tag *dmat)
 }
 
 /*
- * Configure DbC endpoint contexts. [Sec. 7.6.3.2]
- * XXX I'll have to come back to this.
- *
- * We have the following extra conditions:
+ * Configure DbC endpoint contexts [Sec. 7.6.3.2] with three conditions:
  *  1. wMaxPacketSize is fixed at 1024.
  *  2. "Three strikes" rule applies [Sec. 4.3.3]
- *  3. Endpoints are always BULK.
+ *  3. Endpoints are always BULK, and streams are not supported.
  */
 static usb_error_t
-xhci_dbc_ep_config(struct xhci_dbc *dbc, int dir_in)
+xhci_dbc_ep_config(struct xhci_softc *sc, struct xhci_dbc *dbc, int idx)
 {
-	struct usb_page_search buf_inp;
-	uint64_t ring_addr = pepext->physaddr;
-	uint32_t temp;
+	struct usb_page_search	 buf_res;
+	struct xhci_hw_dbcc	*pdbcc;
+	struct xhci_endp_ctx	*pep;
+	uint64_t			 ring_addr;
+	uint32_t			 temp;
 
-	/* XXX Get page from the correct page cache */
-	//usbd_get_page(&sc->sc_hw.devs[index].input_pc, 0, &buf_inp);
-	//pinp = buf_inp.buffer;
+	/* Get pointers into DbCC. */
+	usbd_get_page(&dbc->dbc_ctx_pc, 0, &buf_res);
+	pdbcc = (struct xhci_hw_dbcc *)buf_res.buffer;
+	pep = DBCC_EP_CTX(pdbcc, idx);
 
-	/* XXX Do we need to set this at all? */
-	if (max_packet_count == 0)
-		return (USB_ERR_BAD_BUFSIZE);
-	max_packet_count--;
+	/* Get pointers into TRB ring for current endpoint index. */
+	usbd_get_page(DBC_EP_PC(dbc, idx), 0, &buf_res);
+	ring_addr = buf_res.physaddr;
+	
+	/* No streams or bursts. */
+	xhci_ctx_set_le32(sc, &pep->dwEpCtx0, 0);
 
-	/* XXX Flush the right cache */
-	usb_pc_cpu_flush(pepext->page_cache);
-
-	temp = XHCI_EPCTX_0_EPSTATE_SET(0) |
-		XHCI_EPCTX_0_MAXP_STREAMS_SET(0) |
-		XHCI_EPCTX_0_LSA_SET(0);
-	ring_addr |= XHCI_EPCTX_2_DCS_SET(1);
-	xhci_ctx_set_le32(sc, &pinp->ctx_ep[epno - 1].dwEpCtx0, temp);
-
-	temp =
-	    XHCI_EPCTX_1_HID_SET(0) |
-	    XHCI_EPCTX_1_MAXB_SET(max_packet_count) |
-	    XHCI_EPCTX_1_MAXP_SIZE_SET(max_packet_size);
-
+	/* Bulk only, Three strikes, 1024B packets. */
+	temp = XHCI_EPCTX_1_HID_SET(0) |
+	    XHCI_EPCTX_1_MAXB_SET((dbc->dbc_bst_max - 1)) |
+	    XHCI_EPCTX_1_MAXP_SIZE_SET(DBC_EP_MAXP_SIZE);
 	temp |= XHCI_EPCTX_1_CERR_SET(3);
+	temp |= XHCI_EPCTX_1_EPTYPE_SET((idx == DBC_EP_IN ? 6 : 2));
+	xhci_ctx_set_le32(sc, &pep->dwEpCtx1, temp);
 
-	/* Bulk only */
-	temp |= XHCI_EPCTX_1_EPTYPE_SET(2);
-	temp |= XHCI_EPCTX_1_EPTYPE_SET((dir_in ? 6 : 2));
-
-	xhci_ctx_set_le32(sc, &pinp->ctx_ep[epno - 1].dwEpCtx1, temp);
-	xhci_ctx_set_le64(sc, &pinp->ctx_ep[epno - 1].qwEpCtx2, ring_addr);
+	/* XXX Ring from fresh. */
+	ring_addr |= XHCI_EPCTX_2_DCS_SET(1);
+	xhci_ctx_set_le64(sc, &pep->qwEpCtx2, ring_addr);
 
 	temp = XHCI_EPCTX_4_AVG_TRB_LEN_SET(XHCI_PAGE_SIZE);
-
-	xhci_ctx_set_le32(sc, &pinp->ctx_ep[epno - 1].dwEpCtx4, temp);
+	xhci_ctx_set_le32(sc, &pep->dwEpCtx4, temp);
 
 #ifdef USB_DEBUG
-	xhci_dump_endpoint(sc, XXX);
+	xhci_dump_endpoint(sc, pep);
 #endif
-	// FIXME need flush
-	//usb_pc_cpu_flush(&sc->sc_hw.devs[index].input_pc);
+
+	/* flush ring and descriptor */
+	usb_pc_cpu_flush(&dbc->dbc_ctx_pc);
+	usb_pc_cpu_flush(DBC_EP_PC(dbc, idx));
 
 	return (0);		/* success */
 }
 
 #ifdef USB_DEBUG
-/* TODO: Dump the whole DBCIC, not just the strings. */
 static void
-xhci_dbc_ic_dump(struct xhci_dbc_ic *pic)
+xhci_dbcc_dump(struct xhci_softc *sc, struct xhci_hw_dbcc *pdbcc)
 {
-	void *addr;
-	int i;
+	void		*addr;
+	int		 i;
+	uint8_t	 len;
 
 	/*
-	 * Dump only the mapped addresses we poked into the DbCIC earlier.
+	 * Dump only the mapped addresses we poked into the DbCC earlier.
 	 * Strings are UTF-16 and would need decoding anyway.
 	 */
-	DPRINTFN(5, "dbcic = %p\n", pic);
+	DPRINTFN(5, "dbcc = %p\n", pdbcc);
 	for (i = 0; i < DBCIC_MAX_DESCS; i++) {
-		addr = (void *)(uintptr_t)le64toh(pic->aqwDesc[i]);
+		addr = (void *)(uintptr_t)le64toh(pdbcc->dbcc_ic.aqwDesc[i]);
+		len = pdbcc->dbcc_ic.abyStrlen[i];
+#if 1
 		DPRINTFN(5, "aqwDesc[%d] = 0x%016llx\n", i, (long long)addr);
-#if 0
-		int len;
-		len = pic->abyStrlen;
+#else
 		DPRINTFN(5, "aqwDesc[%d] -> \"%*.*s\"\n", i, len, len, addr);
 #endif
 	}
+	
+	/* Dump the OUT and IN endpoints. */
+	for (i = 0; i < DBC_EP_MAX; i++)
+		xhci_dump_endpoint(sc, DBCC_EP_CTX(pdbcc, i));
 }
 #endif /* USB_DEBUG */
 

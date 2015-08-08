@@ -60,61 +60,56 @@ struct xhci_dbc_ic {
 	uint32_t	 dwReserved[7];
 } __packed;
 
+/* Endpoint context indices */
+#define DBC_EP_OUT		0
+#define DBC_EP_IN		1
+#define DBC_EP_MAX		2
+
+#define DBC_EP_MAXP_SIZE		1024		/* Fixed packet size for DbC EPs */
+
 /*
  * DbC Information Context (IC).
- *  XXX Need to track pages for each endpoint context somewhere else.
  */
-struct xhci_dbc_ctx {
-	struct xhci_dbc_ic		 dbcic;	/* Info context; 'personality' */
-	struct xhci_endp_ctx	 ctx_out; 	/* [Sec. 6.2.3] */
-	uint32_t			 reserved00[8];
-	struct xhci_endp_ctx	 ctx_in;
-	uint32_t			 reserved01[8];
+struct xhci_hw_dbcc {
+	struct xhci_dbc_ic		 	 dbcc_ic;		/* 'personality' */
+	struct {
+		struct xhci_endp_ctx	 ctx; 			/* [Sec. 6.2.3] */
+		uint32_t			 reserved[8];	/* Pad to 64 bytes */
+	} dbcc_endps[DBC_EP_MAX] __packed;
 } __packed;
-
-#define DBC_ENDP_MAXP_SIZE	1024		/* Fixed packet size for DbC EPs */
-
-/*
-dbcic -> dbc_ic
-ctx_in,out -> dbx_endps
-struct {
-} dbc_endps[DBC_ENDP_MAX];
-DBC_ENDP_OUT
-DBC_ENDP_IN
-DBC_CTX_OUT
-DBC_CTX_IN
-*/
+#define DBCC_EP_CTX(x, idx)		(&((x)->dbcc_endps[(idx)].ctx))
 
 /*
- * Kernel-visible structures.
+ * Driver-visible structures.
  */
 
 /* 'usb/' + 'xhci' + 'NNNNNN' + '-dbc' + '\0' + 2*pad := 80 bytes */
 #define DBC_PROCNAMELEN (4 + SPECNAMELEN + 6 + 4 + 1 + 2)
 
 struct xhci_dbc {
-	struct usb_page_cache	 dbc_ctx_pc;
-	struct usb_page_cache	 dbc_erst_pc;
-	struct usb_page_cache	 dbc_in_pc;
+	struct usb_page_cache	 dbc_ctx_pc;				/* DbCC */
+	struct usb_page_cache	 dbc_erst_pc;			/* ERST */
+	struct usb_page_cache	 dbc_ring_pcs[DBC_EP_MAX];	/* EPs */
 
 	struct usb_page		 dbc_ctx_pg;
 	struct usb_page		 dbc_erst_pg;
-	struct usb_page		 dbc_in_pg;
+	struct usb_page		 dbc_ring_pgs[DBC_EP_MAX];
 	
 	struct usb_process		 dbc_proc;
 	struct mtx			 dbc_mtx;
 	
-	/* chip specific */
-	uint16_t			 dbc_erst_max;
-#if 0
-	uint16_t			 sc_event_idx;
-	uint16_t			 sc_command_idx;
-	uint16_t			 sc_imod_default;
-#endif
+	struct xhci_softc		*dbc_sc;		/* backptr to xHCI softc */
 
-	/* process handling */
+	/* chip specific */
+	uint16_t			 dbc_erst_max;	/* event ring segment limit */
+	uint8_t			 dbc_bst_max;	/* packet burst limit */
+	uint8_t			 dbc_pad00;
+	
+	/* thread naming */
 	char				 dbc_procname[DBC_PROCNAMELEN];
 };
+#define DBC_EP_PC(x, idx)		(&((x)->dbc_ring_pcs[(idx)]))
+#define DBC_EP_PG(x, idx)		(&((x)->dbc_ring_pgs[(idx)]))
 
 /*
  * There are no user-visible structures.
