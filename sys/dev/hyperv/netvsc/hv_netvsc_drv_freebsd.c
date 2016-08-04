@@ -128,6 +128,15 @@ __FBSDID("$FreeBSD$");
 #define HV_NV_SC_PTR_OFFSET_IN_BUF         0
 #define HV_NV_PACKET_OFFSET_IN_BUF         16
 
+/*
+ * A unified flag for all outbound check sum flags is useful,
+ * and it helps avoiding unnecessary check sum calculation in
+ * network forwarding scenario.
+ */
+#define HV_CSUM_FOR_OUTBOUND						\
+    (CSUM_IP|CSUM_IP_UDP|CSUM_IP_TCP|CSUM_IP_SCTP|CSUM_IP_TSO|		\
+    CSUM_IP_ISCSI|CSUM_IP6_UDP|CSUM_IP6_TCP|CSUM_IP6_SCTP|		\
+    CSUM_IP6_TSO|CSUM_IP6_ISCSI)
 
 /*
  * Data types
@@ -343,7 +352,15 @@ netvsc_attach(device_t dev)
 	    IFCAP_VLAN_HWTAGGING | IFCAP_VLAN_MTU | IFCAP_HWCSUM | IFCAP_TSO;
 	ifp->if_capenable |=
 	    IFCAP_VLAN_HWTAGGING | IFCAP_VLAN_MTU | IFCAP_HWCSUM | IFCAP_TSO;
-	ifp->if_hwassist = CSUM_TCP | CSUM_UDP | CSUM_TSO;
+	/*
+	 * Only enable UDP checksum offloading when it is on 2012R2 or
+	 * later. UDP checksum offloading doesn't work on earlier
+	 * Windows releases.
+	 */
+	if (hv_vmbus_protocal_version >= HV_VMBUS_VERSION_WIN8_1)
+		ifp->if_hwassist = CSUM_TCP | CSUM_UDP | CSUM_TSO;
+	else
+		ifp->if_hwassist = CSUM_TCP | CSUM_TSO;
 
 	ret = hv_rf_on_device_add(device_ctx, &device_info);
 	if (ret != 0) {
@@ -562,7 +579,8 @@ hn_start_locked(struct ifnet *ifp)
 			    packet->vlan_tci & 0xfff;
 		}
 
-		if (0 == m_head->m_pkthdr.csum_flags) {
+		/* Only check the flags for outbound and ignore the ones for inbound */
+		if (0 == (m_head->m_pkthdr.csum_flags & HV_CSUM_FOR_OUTBOUND)) {
 			goto pre_send;
 		}
 
@@ -1110,7 +1128,17 @@ hn_ioctl(struct ifnet *ifp, u_long cmd, caddr_t data)
 				ifp->if_hwassist &= ~(CSUM_TCP | CSUM_UDP);
 			} else {
 				ifp->if_capenable |= IFCAP_TXCSUM;
-				ifp->if_hwassist |= (CSUM_TCP | CSUM_UDP);
+				/*
+				 * Only enable UDP checksum offloading on
+				 * Windows Server 2012R2 or later releases.
+				 */
+				if (hv_vmbus_protocal_version >=
+				    HV_VMBUS_VERSION_WIN8_1) {
+					ifp->if_hwassist |=
+					    (CSUM_TCP | CSUM_UDP);
+				} else {
+					ifp->if_hwassist |= CSUM_TCP;
+				}
 			}
 		}
 

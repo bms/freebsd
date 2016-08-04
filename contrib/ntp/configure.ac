@@ -11,6 +11,7 @@ AC_INIT(
 )
 AC_CONFIG_MACRO_DIR([sntp/m4])
 AC_CONFIG_AUX_DIR([sntp/libevent/build-aux])
+AC_LANG([C])
 
 AC_PRESERVE_HELP_ORDER
 
@@ -301,7 +302,9 @@ AC_CHECK_HEADER(
 AC_CHECK_HEADERS([fcntl.h fnmatch.h ieeefp.h inttypes.h kvm.h math.h])
 
 AC_CHECK_HEADERS([memory.h netdb.h poll.h])
-AC_CHECK_HEADERS([sgtty.h stdatomic.h stdlib.h string.h termio.h])
+AC_CHECK_HEADERS([sgtty.h stdatomic.h])
+AC_HEADER_STDBOOL
+AC_CHECK_HEADERS([stdlib.h string.h termio.h])
 AC_CHECK_HEADERS([termios.h timepps.h timex.h unistd.h])
 
 case "$host" in
@@ -927,60 +930,6 @@ case "$host" in
 esac
 
 NTP_RLIMIT_ITEMS
-
-# HMS: Only if we are doing the MLOCKALL stuff...
-AC_MSG_CHECKING([for the default number of 4k stack pages])
-AC_ARG_WITH(
-    [stack-limit],
-    [AS_HELP_STRING(
-	[--with-stack-limit],
-	[? =50 (200 for openbsd) 4k pages]
-    )],
-    [ans=$withval],
-    [ans=yes]
-)
-case "$ans" in
- yes | no)
-    case "$host" in
-     *-*-openbsd*)
-	ans=200
-	;;
-     *) ans=50
-        ;;
-    esac
-    ;;
- [[1-9]][[0-9]]*)
-    ;;
- *) AC_MSG_ERROR(["--with-stack-limit requires an integer argument."])
-    ;;
-esac
-AC_MSG_RESULT([$ans])
-AC_DEFINE_UNQUOTED([DFLT_RLIMIT_STACK], [$ans],
-    [Default number of 4k pages for RLIMIT_STACK])
-
-# HMS: only if we have RLIMIT_MEMLOCK
-AC_MSG_CHECKING([for the default number of megabytes to MEMLOCK])
-AC_ARG_WITH(
-    [memlock],
-    [AS_HELP_STRING(
-	[--with-memlock],
-	[? =32 (megabytes)]
-    )],
-    [ans=$withval],
-    [ans=yes]
-)
-case "$ans" in
- yes | no)
-    ans=32
-    ;;
- [[1-9]][[0-9]]*) ;;
- *) AC_MSG_ERROR(["--with-memlock requires an integer argument."])
-     ;;
-esac
-AC_MSG_RESULT([$ans])
-AC_DEFINE_UNQUOTED([DFLT_RLIMIT_MEMLOCK], [$ans],
-    [Default number of megabytes for RLIMIT_MEMLOCK])
-
 
 # some OSes prefer _exit() in forked children to exit()
 AC_CHECK_FUNCS([_exit])
@@ -4211,6 +4160,24 @@ case "$ans" in
 esac
 
 
+AC_MSG_CHECKING([if we want the explicit 127.0.0.0/8 martian filter])
+AC_ARG_ENABLE(
+    [bug3020-fix],
+    [AS_HELP_STRING(
+	[--enable-bug3020-fix],
+	[+ Provide the explicit 127.0.0.0/8 martian filter]
+    )],
+    [ans=$enableval],
+    [ans=yes]
+)
+AC_MSG_RESULT([$ans])
+case "$ans" in
+ yes)
+    AC_DEFINE([ENABLE_BUG3020_FIX], [1],
+	[Provide the explicit 127.0.0.0/8 martian filter?])
+esac
+
+
 AC_MSG_CHECKING([if we should use the IRIG sawtooth filter])
 
 case "$host" in
@@ -4375,12 +4342,36 @@ case "$ntp_ok" in
 esac
 AC_MSG_RESULT([$ntp_ok])
 
+###
+
+AC_MSG_CHECKING([if we want dynamic interleave support])
+AC_ARG_ENABLE(
+    [dynamic-interleave],
+    [AS_HELP_STRING(
+	[--enable-dynamic-interleave],
+	[- dynamic interleave support]
+    )],
+    [ntp_ok=$enableval],
+    [ntp_ok=no]
+)
+ntp_dynamic_interleave=0
+case "$ntp_ok" in
+ yes)
+    ntp_dynamic_interleave=1
+    ;;
+esac
+AC_DEFINE_UNQUOTED([DYNAMIC_INTERLEAVE], [$ntp_dynamic_interleave],
+    [support dynamic interleave?])
+AC_MSG_RESULT([$ntp_ok])
+
 NTP_UNITYBUILD
 
 dnl  gtest is needed for our tests subdirs. It would be nice if we could
 dnl  require a C++ compiler only if we will use gtest, but AC_PROG_CXX
 dnl  can't be conditionalized.
 NTP_GOOGLETEST
+
+NTP_PROBLEM_TESTS
 
 ###
 
@@ -4406,6 +4397,7 @@ AC_CONFIG_FILES([ntpsnmpd/Makefile])
 AC_CONFIG_FILES([parseutil/Makefile])
 AC_CONFIG_FILES([scripts/Makefile])
 AC_CONFIG_FILES([scripts/build/Makefile])
+AC_CONFIG_FILES([scripts/build/genAuthors],	[chmod +x scripts/build/genAuthors])
 AC_CONFIG_FILES([scripts/build/mkver],	[chmod +x scripts/build/mkver])
 AC_CONFIG_FILES([scripts/calc_tickadj/Makefile])
 AC_CONFIG_FILES([scripts/calc_tickadj/calc_tickadj], [chmod +x scripts/calc_tickadj/calc_tickadj])
@@ -4425,6 +4417,7 @@ AC_CONFIG_FILES([tests/Makefile])
 AC_CONFIG_FILES([tests/bug-2803/Makefile])
 AC_CONFIG_FILES([tests/libntp/Makefile])
 AC_CONFIG_FILES([tests/ntpd/Makefile])
+AC_CONFIG_FILES([tests/ntpq/Makefile])
 AC_CONFIG_FILES([tests/sandbox/Makefile])
 AC_CONFIG_FILES([tests/sec-2853/Makefile])
 AC_CONFIG_FILES([util/Makefile])

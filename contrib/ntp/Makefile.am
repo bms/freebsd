@@ -23,7 +23,7 @@ SUBDIRS =		\
 	tests		\
 	$(NULL)
 
-DISTCHECK_CONFIGURE_FLAGS = -C --with-sntp
+DISTCHECK_CONFIGURE_FLAGS = -C --with-sntp --enable-local-libevent $(NTP_DCF)
 
 EXTRA_DIST =			\
 	$(srcdir)/COPYRIGHT	\
@@ -36,6 +36,7 @@ EXTRA_DIST =			\
 	README.hackers		\
 	README.leapsmear	\
 	README.patches		\
+	README.pullrequests	\
 	README.refclocks	\
 	README.versions		\
 	TODO			\
